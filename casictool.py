@@ -42,6 +42,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--show-config", action="store_true", help="Show current configuration"
     )
+    parser.add_argument(
+        "--packet-log",
+        type=str,
+        metavar="PATH",
+        help="Log all packets to JSONL file",
+    )
 
     # Timing mode group
     timing_group = parser.add_argument_group("Timing Mode")
@@ -391,7 +397,9 @@ def run_casictool(argv: list[str]) -> CommandResult:
 
     # Execute the job
     try:
-        with CasicConnection(args.device, baudrate=args.speed) as conn:
+        with CasicConnection(
+            args.device, baudrate=args.speed, packet_log=args.packet_log
+        ) as conn:
             return execute_job(conn, job)
     except serial.SerialException as e:
         return CommandResult(success=False, error=str(e))

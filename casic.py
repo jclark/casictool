@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import math
 import struct
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from datetime import datetime, timezone
+from typing import IO, TYPE_CHECKING
 
 import serial
 
@@ -84,6 +86,27 @@ NMEA_MESSAGES: list[tuple[str, MsgID]] = [
     ("VTG", NMEA_VTG),
     ("ZDA", NMEA_ZDA),
 ]
+
+
+def _build_msg_names() -> dict[tuple[int, int], str]:
+    """Build message name lookup from MsgID constants."""
+    names: dict[tuple[int, int], str] = {}
+    for name, obj in globals().items():
+        if isinstance(obj, MsgID) and "_" in name:
+            # Convert ACK_ACK -> "ACK-ACK", CFG_TP -> "CFG-TP"
+            msg_name = name.replace("_", "-")
+            names[(obj.cls, obj.id)] = msg_name
+    return names
+
+
+MSG_NAMES: dict[tuple[int, int], str] = _build_msg_names()
+
+
+def _extract_nmea_msg_type(sentence: str) -> str:
+    """Extract message type from NMEA sentence (e.g., '$GNGGA,...' -> 'GNGGA')."""
+    if sentence.startswith("$") and "," in sentence:
+        return sentence[1 : sentence.index(",")]
+    return "NMEA"
 
 # Mask bits for CFG-CFG (configuration sections)
 CFG_MASK_PORT = 0x0001  # B0: CFG-PRT
@@ -190,15 +213,61 @@ class PollResult:
 class CasicConnection:
     """Serial connection with CASIC protocol handling."""
 
-    def __init__(self, port: str, baudrate: int = 9600, timeout: float = 2.0) -> None:
+    def __init__(
+        self,
+        port: str,
+        baudrate: int = 9600,
+        timeout: float = 2.0,
+        packet_log: str | None = None,
+    ) -> None:
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
         self._serial: Serial = serial.Serial(port, baudrate=baudrate, timeout=timeout)
         self._serial.reset_input_buffer()
+        self._packet_log: IO[str] | None = None
+        if packet_log:
+            self._packet_log = open(packet_log, "a")
 
     def close(self) -> None:
+        if self._packet_log:
+            self._packet_log.close()
+            self._packet_log = None
         self._serial.close()
+
+    def _log_casic_packet(self, data: bytes, ts: float, out: bool) -> None:
+        """Log a CASIC binary packet to the packet log."""
+        if not self._packet_log:
+            return
+        cls = data[4]
+        msg_id = data[5]
+        msg_name = MSG_NAMES.get((cls, msg_id), f"UNK-{cls:02X}-{msg_id:02X}")
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        entry = {
+            "t": dt.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z",
+            "tag": "CSIP",
+            "msg": msg_name,
+            "bin": data.hex(),
+            "out": out,
+        }
+        self._packet_log.write(json.dumps(entry) + "\n")
+        self._packet_log.flush()
+
+    def _log_nmea_packet(self, sentence: str, ts: float) -> None:
+        """Log an NMEA text packet to the packet log."""
+        if not self._packet_log:
+            return
+        msg_type = _extract_nmea_msg_type(sentence)
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        entry = {
+            "t": dt.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z",
+            "tag": "NMEA",
+            "msg": msg_type,
+            "ascii": sentence,
+            "out": False,
+        }
+        self._packet_log.write(json.dumps(entry) + "\n")
+        self._packet_log.flush()
 
     def __enter__(self) -> CasicConnection:
         return self
@@ -214,11 +283,16 @@ class CasicConnection:
     def send(self, cls: int, id: int, payload: bytes = b"") -> None:
         """Send a CASIC message."""
         msg = pack_msg(cls, id, payload)
+        ts = time.time()
         self._serial.write(msg)
         self._serial.flush()
+        self._log_casic_packet(msg, ts, out=True)
 
     def receive(self, timeout: float | None = None) -> tuple[MsgID, bytes] | None:
-        """Receive and parse a CASIC message."""
+        """Receive and parse a CASIC message.
+
+        Also logs NMEA sentences to packet log if enabled.
+        """
         if timeout is None:
             timeout = self.timeout
 
@@ -229,7 +303,31 @@ class CasicConnection:
         try:
             while time.monotonic() - start_time < timeout:
                 byte1 = self._serial.read(1)
-                if not byte1 or byte1[0] != SYNC1:
+                if not byte1:
+                    continue
+
+                ts = time.time()  # Timestamp when first byte received
+
+                # Check for NMEA sentence start
+                if byte1[0] == 0x24:  # '$'
+                    nmea_buf = bytearray(byte1)
+                    # Read until newline or timeout
+                    while time.monotonic() - start_time < timeout:
+                        b = self._serial.read(1)
+                        if not b:
+                            break
+                        nmea_buf.extend(b)
+                        if b[0] == 0x0A:  # '\n'
+                            try:
+                                sentence = nmea_buf.decode("ascii")
+                                self._log_nmea_packet(sentence, ts)
+                            except UnicodeDecodeError:
+                                pass
+                            break
+                    continue
+
+                # Check for CASIC message start
+                if byte1[0] != SYNC1:
                     continue
 
                 byte2 = self._serial.read(1)
@@ -249,6 +347,7 @@ class CasicConnection:
                 full_msg = bytes([SYNC1, SYNC2]) + length_bytes + rest
                 result = parse_msg(full_msg)
                 if result is not None:
+                    self._log_casic_packet(full_msg, ts, out=False)
                     return result
 
             return None

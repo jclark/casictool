@@ -323,6 +323,9 @@ def main() -> int:
         help="Test NVM operations (save/reload + factory reset)",
     )
     parser.add_argument("--all", action="store_true", help="Run all test groups")
+    parser.add_argument(
+        "-l", "--packet-log", type=str, metavar="PATH", help="Log all packets to JSONL file"
+    )
 
     args = parser.parse_args()
 
@@ -341,7 +344,7 @@ def main() -> int:
 
     # Connect to receiver
     try:
-        conn = CasicConnection(args.device, args.speed)
+        conn = CasicConnection(args.device, args.speed, packet_log=args.packet_log)
     except Exception as e:
         print(f"Error: Could not connect to {args.device}: {e}", file=sys.stderr)
         return 1
