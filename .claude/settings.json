@@ -1,5 +1,7 @@
 {
-  "commit": {
-    "appendCoAuthor": false
+  "includeCoAuthoredBy": false,
+  "attribution": {
+    "commit": "",
+    "pr": ""
   }
 }
