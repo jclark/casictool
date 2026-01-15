@@ -598,6 +598,41 @@ def parse_cfg_tmode(payload: bytes) -> TimingModeConfig:
     )
 
 
+def build_cfg_tmode(
+    mode: int,
+    fixed_pos: tuple[float, float, float] | None = None,
+    fixed_pos_acc: float = 1.0,
+    survey_min_dur: int = 2000,
+    survey_acc: float = 20.0,
+) -> bytes:
+    """Build CFG-TMODE payload (40 bytes).
+
+    Args:
+        mode: 0=Auto, 1=Survey-In, 2=Fixed
+        fixed_pos: (X, Y, Z) ECEF coordinates in meters (required for mode=2)
+        fixed_pos_acc: Position accuracy in meters (for mode=2)
+        survey_min_dur: Survey minimum duration in seconds (for mode=1)
+        survey_acc: Survey target accuracy in meters (for mode=1)
+    """
+    if fixed_pos is None:
+        fixed_pos = (0.0, 0.0, 0.0)
+
+    # Variance = accuracy squared
+    fixed_pos_var = fixed_pos_acc**2
+    survey_var_limit = survey_acc**2
+
+    return struct.pack(
+        "<IdddfIf",
+        mode,  # U4: mode
+        fixed_pos[0],  # R8: fixedPosX
+        fixed_pos[1],  # R8: fixedPosY
+        fixed_pos[2],  # R8: fixedPosZ
+        fixed_pos_var,  # R4: fixedPosVar
+        survey_min_dur,  # U4: svinMinDur
+        survey_var_limit,  # R4: svinVarLimit
+    )
+
+
 def parse_cfg_navx(payload: bytes) -> NavEngineConfig:
     """Parse CFG-NAVX response payload (44 bytes)."""
     if len(payload) < 44:
