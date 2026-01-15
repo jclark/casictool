@@ -56,7 +56,8 @@ from casic import (
     parse_cfg_tp,
     parse_msg,
 )
-from job import ConfigChanges, parse_gnss_arg, parse_nmea_out
+from casictool import GNSS, NMEA, parse_gnss_arg, parse_nmea_out
+from job import ConfigChanges
 
 
 class TestMsgID:
@@ -502,22 +503,22 @@ class TestParseNmeaOut:
     def test_basic(self) -> None:
         """Test parsing messages to enable."""
         enable = parse_nmea_out("GGA,RMC,ZDA")
-        assert enable == ["GGA", "RMC", "ZDA"]
+        assert enable == {NMEA.GGA: 1, NMEA.RMC: 1, NMEA.ZDA: 1}
 
     def test_case_insensitive(self) -> None:
         """Test case insensitivity."""
         enable = parse_nmea_out("gga,Rmc,zda")
-        assert enable == ["GGA", "RMC", "ZDA"]
+        assert enable == {NMEA.GGA: 1, NMEA.RMC: 1, NMEA.ZDA: 1}
 
     def test_whitespace_handling(self) -> None:
         """Test whitespace is trimmed."""
         enable = parse_nmea_out(" GGA , RMC , ZDA ")
-        assert enable == ["GGA", "RMC", "ZDA"]
+        assert enable == {NMEA.GGA: 1, NMEA.RMC: 1, NMEA.ZDA: 1}
 
     def test_empty_items_ignored(self) -> None:
         """Test empty items in comma list are ignored."""
         enable = parse_nmea_out("GGA,,RMC,")
-        assert enable == ["GGA", "RMC"]
+        assert enable == {NMEA.GGA: 1, NMEA.RMC: 1}
 
     def test_invalid_message(self) -> None:
         """Test invalid message name raises ValueError."""
@@ -527,7 +528,15 @@ class TestParseNmeaOut:
     def test_all_valid_messages(self) -> None:
         """Test all valid message names are accepted."""
         enable = parse_nmea_out("GGA,GLL,GSA,GSV,RMC,VTG,ZDA")
-        assert enable == ["GGA", "GLL", "GSA", "GSV", "RMC", "VTG", "ZDA"]
+        assert enable == {
+            NMEA.GGA: 1,
+            NMEA.GLL: 1,
+            NMEA.GSA: 1,
+            NMEA.GSV: 1,
+            NMEA.RMC: 1,
+            NMEA.VTG: 1,
+            NMEA.ZDA: 1,
+        }
 
 
 class TestBuildCfgNavx:
@@ -614,41 +623,41 @@ class TestBuildCfgNavx:
 class TestParseGnssArg:
     def test_single_gps(self) -> None:
         """Test parsing GPS only."""
-        assert parse_gnss_arg("GPS") == 0x01
+        assert parse_gnss_arg("GPS") == {GNSS.GPS}
 
     def test_single_bds(self) -> None:
         """Test parsing BDS only."""
-        assert parse_gnss_arg("BDS") == 0x02
+        assert parse_gnss_arg("BDS") == {GNSS.BDS}
 
     def test_single_glo(self) -> None:
         """Test parsing GLO only."""
-        assert parse_gnss_arg("GLO") == 0x04
+        assert parse_gnss_arg("GLO") == {GNSS.GLO}
 
     def test_multiple_constellations(self) -> None:
         """Test parsing multiple constellations."""
-        assert parse_gnss_arg("GPS,BDS") == 0x03
-        assert parse_gnss_arg("GPS,GLO") == 0x05
-        assert parse_gnss_arg("BDS,GLO") == 0x06
-        assert parse_gnss_arg("GPS,BDS,GLO") == 0x07
+        assert parse_gnss_arg("GPS,BDS") == {GNSS.GPS, GNSS.BDS}
+        assert parse_gnss_arg("GPS,GLO") == {GNSS.GPS, GNSS.GLO}
+        assert parse_gnss_arg("BDS,GLO") == {GNSS.BDS, GNSS.GLO}
+        assert parse_gnss_arg("GPS,BDS,GLO") == {GNSS.GPS, GNSS.BDS, GNSS.GLO}
 
     def test_case_insensitive(self) -> None:
         """Test case insensitivity."""
-        assert parse_gnss_arg("gps") == 0x01
-        assert parse_gnss_arg("Gps,bds") == 0x03
+        assert parse_gnss_arg("gps") == {GNSS.GPS}
+        assert parse_gnss_arg("Gps,bds") == {GNSS.GPS, GNSS.BDS}
 
     def test_glonass_aliases(self) -> None:
-        """Test GLO, GLN, GLONASS all map to bit 2."""
-        assert parse_gnss_arg("GLO") == 0x04
-        assert parse_gnss_arg("GLN") == 0x04
-        assert parse_gnss_arg("GLONASS") == 0x04
+        """Test GLO, GLN, GLONASS all map to GLO."""
+        assert parse_gnss_arg("GLO") == {GNSS.GLO}
+        assert parse_gnss_arg("GLN") == {GNSS.GLO}
+        assert parse_gnss_arg("GLONASS") == {GNSS.GLO}
 
     def test_whitespace_handling(self) -> None:
         """Test whitespace is trimmed."""
-        assert parse_gnss_arg(" GPS , BDS ") == 0x03
+        assert parse_gnss_arg(" GPS , BDS ") == {GNSS.GPS, GNSS.BDS}
 
     def test_empty_items_ignored(self) -> None:
         """Test empty items in comma list are ignored."""
-        assert parse_gnss_arg("GPS,,BDS,") == 0x03
+        assert parse_gnss_arg("GPS,,BDS,") == {GNSS.GPS, GNSS.BDS}
 
     def test_invalid_constellation(self) -> None:
         """Test invalid constellation raises ValueError."""
@@ -666,8 +675,8 @@ class TestParseGnssArg:
             parse_gnss_arg("QZSS")
 
     def test_empty_string(self) -> None:
-        """Test empty string returns 0."""
-        assert parse_gnss_arg("") == 0
+        """Test empty string returns empty set."""
+        assert parse_gnss_arg("") == set()
 
 
 class TestConfigChangesMarkMsg:

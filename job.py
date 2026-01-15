@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
-from typing import TextIO
+from enum import Enum
+from typing import TextIO, TypedDict
 
 from casic import (
     BBR_ALL,
@@ -41,6 +42,107 @@ from casic import (
     parse_cfg_tp,
     parse_mon_ver,
 )
+
+# ============================================================================
+# Enums
+# ============================================================================
+
+
+class GNSS(Enum):
+    """GNSS constellation identifiers."""
+
+    GPS = "GPS"
+    GAL = "GAL"
+    BDS = "BDS"
+    GLO = "GLO"
+
+
+class NMEA(Enum):
+    """NMEA sentence types."""
+
+    GGA = "GGA"
+    GLL = "GLL"
+    GSA = "GSA"
+    GSV = "GSV"
+    RMC = "RMC"
+    VTG = "VTG"
+    ZDA = "ZDA"
+
+
+class SaveMode(Enum):
+    """What to save to NVM."""
+
+    NONE = "none"  # don't save
+    CHANGES = "changes"  # save only what was changed by this job
+    ALL = "all"  # save all current configuration
+
+
+class ResetMode(Enum):
+    """What kind of reset to perform."""
+
+    NONE = "none"  # no reset
+    RELOAD = "reload"  # reload config from NVM (discard unsaved changes)
+    COLD = "cold"  # reload from NVM + cold start (clear nav data)
+    FACTORY = "factory"  # restore NVM to factory defaults + cold start
+
+
+# ============================================================================
+# Property Value Dataclasses
+# ============================================================================
+
+
+@dataclass(frozen=True)
+class TimePulse:
+    """PPS/time pulse configuration."""
+
+    period: float  # pulse period in seconds (1.0 = 1Hz PPS)
+    width: float  # pulse width in seconds
+    time_gnss: GNSS  # time source for PPS alignment
+
+
+@dataclass(frozen=True)
+class MobileMode:
+    """Mobile/auto mode - antenna position may change."""
+
+    pass
+
+
+@dataclass(frozen=True)
+class SurveyMode:
+    """Survey-in mode - determine fixed position by surveying."""
+
+    min_dur: int  # minimum duration in seconds
+    acc: float  # target accuracy in meters
+
+
+@dataclass(frozen=True)
+class FixedMode:
+    """Fixed position mode - use known antenna position."""
+
+    ecef: tuple[float, float, float]  # ECEF coordinates in meters
+    acc: float  # position accuracy in meters
+
+
+# Union of time modes (use isinstance() or match/case to check which)
+TimeMode = MobileMode | SurveyMode | FixedMode
+
+# NMEA output rates: maps sentence type to rate (0 = disabled, 1 = every fix)
+NMEARates = dict[NMEA, int]
+
+
+# ============================================================================
+# ConfigProps TypedDict
+# ============================================================================
+
+
+class ConfigProps(TypedDict, total=False):
+    """Properties that can be set/queried on the receiver."""
+
+    gnss: set[GNSS]  # enabled constellations
+    time_mode: TimeMode  # mobile, survey, or fixed position mode
+    time_pulse: TimePulse  # PPS configuration
+    nmea_out: NMEARates  # NMEA message output rates
+
 
 # ============================================================================
 # Result Types
@@ -299,94 +401,6 @@ def parse_ecef_coords(coord_str: str) -> tuple[float, float, float]:
 VALID_NMEA_MESSAGES = {"GGA", "GLL", "GSA", "GSV", "RMC", "VTG", "ZDA"}
 
 
-def parse_nmea_out(nmea_str: str) -> list[str]:
-    """Parse --nmea-out argument into list of messages to enable.
-
-    Args:
-        nmea_str: Comma-separated message list (e.g., "GGA,RMC,ZDA")
-
-    Returns:
-        List of message names to enable (all others will be disabled)
-    """
-    enable = []
-
-    for item in nmea_str.split(","):
-        item = item.strip().upper()
-        if not item:
-            continue
-        if item in VALID_NMEA_MESSAGES:
-            enable.append(item)
-        else:
-            raise ValueError(f"Unknown NMEA message: {item}")
-
-    return enable
-
-
-# GNSS constellation names and aliases
-VALID_GNSS = {"GPS", "BDS", "GLO", "GLN", "GLONASS"}
-UNSUPPORTED_GNSS = {"GAL", "GALILEO", "QZSS", "NAVIC", "SBAS"}
-
-
-def parse_gnss_arg(gnss_str: str) -> int:
-    """Parse --gnss argument into navSystem bitmask.
-
-    Args:
-        gnss_str: Comma-separated list (e.g., "GPS,BDS,GLO")
-
-    Returns:
-        Bitmask: B0=GPS, B1=BDS, B2=GLONASS
-
-    Raises:
-        ValueError: If unknown or unsupported constellation specified
-    """
-    mask = 0
-
-    for item in gnss_str.split(","):
-        item = item.strip().upper()
-        if not item:
-            continue
-        if item in UNSUPPORTED_GNSS:
-            raise ValueError(
-                f"Unsupported constellation: {item}. "
-                "This receiver only supports GPS, BDS, and GLONASS."
-            )
-        if item not in VALID_GNSS:
-            raise ValueError(f"Unknown constellation: {item}")
-
-        if item == "GPS":
-            mask |= 0x01
-        elif item == "BDS":
-            mask |= 0x02
-        elif item in ("GLO", "GLN", "GLONASS"):
-            mask |= 0x04
-
-    return mask
-
-
-# Time GNSS (PPS time source) names
-VALID_TIME_GNSS = {"GPS", "BDS", "GLO", "GLONASS"}
-
-
-def parse_time_gnss_arg(system: str) -> str:
-    """Validate and normalize --time-gnss argument.
-
-    Args:
-        system: Time source constellation name
-
-    Returns:
-        Normalized system name (GPS, BDS, or GLO)
-
-    Raises:
-        ValueError: If unknown time source specified
-    """
-    system = system.strip().upper()
-    if system == "GLONASS":
-        system = "GLO"
-    if system not in {"GPS", "BDS", "GLO"}:
-        raise ValueError(f"Unknown time source: {system}. Use GPS, BDS, or GLO.")
-    return system
-
-
 # ============================================================================
 # PPS Command Functions
 # ============================================================================
@@ -474,32 +488,120 @@ def set_time_gnss(conn: CasicConnection, system: str) -> bool:
 
 @dataclass
 class ConfigJob:
-    """Specification of configuration operations to perform."""
+    """Complete specification of what casictool should do."""
 
-    # Timing mode (mutually exclusive)
-    survey: tuple[int, float] | None = None  # (min_dur_secs, acc_meters)
-    fixed_pos: tuple[tuple[float, float, float], float] | None = None  # (ecef, acc)
-    mobile: bool = False
+    props: ConfigProps | None = None  # Properties to set
+    save: SaveMode = SaveMode.NONE  # What to save to NVM
+    reset: ResetMode = ResetMode.NONE  # What kind of reset to perform
+    show_config: bool = False  # Query and return current config
 
-    # GNSS selection
-    gnss: int | None = None  # Bitmask: B0=GPS, B1=BDS, B2=GLO
 
-    # NMEA output
-    nmea_enable: list[str] | None = None  # Messages to enable (others disabled)
+def gnss_set_to_mask(gnss: set[GNSS]) -> int:
+    """Convert set of GNSS enums to navSystem bitmask."""
+    mask = 0
+    if GNSS.GPS in gnss:
+        mask |= 0x01
+    if GNSS.BDS in gnss:
+        mask |= 0x02
+    if GNSS.GLO in gnss:
+        mask |= 0x04
+    return mask
 
-    # Time pulse (PPS) configuration
-    pps_width: float | None = None  # Pulse width in seconds (0 to disable)
-    time_gnss: str | None = None  # Time source: "GPS", "BDS", "GLO"
 
-    # NVM operations (mutually exclusive)
-    save_mask: int | None = None  # Save these sections to NVM
-    save_changes: bool = False  # Save only changed sections
-    reload: bool = False  # Load from NVM
-    reset: bool = False  # Cold start
-    factory_reset: bool = False  # Factory reset
+def gnss_mask_to_set(mask: int) -> set[GNSS]:
+    """Convert navSystem bitmask to set of GNSS enums."""
+    result: set[GNSS] = set()
+    if mask & 0x01:
+        result.add(GNSS.GPS)
+    if mask & 0x02:
+        result.add(GNSS.BDS)
+    if mask & 0x04:
+        result.add(GNSS.GLO)
+    return result
 
-    # Query only
-    show_config: bool = False  # Show current configuration
+
+def gnss_to_time_source(gnss: GNSS) -> int:
+    """Convert GNSS enum to time source code for CFG-TP."""
+    return {"GPS": 0, "BDS": 1, "GLO": 2}.get(gnss.value, 0)
+
+
+def time_source_to_gnss(time_source: int) -> GNSS:
+    """Convert time source code from CFG-TP to GNSS enum."""
+    return {0: GNSS.GPS, 1: GNSS.BDS, 2: GNSS.GLO}.get(time_source, GNSS.GPS)
+
+
+def query_config_props(conn: CasicConnection) -> ConfigProps:
+    """Query receiver and return ConfigProps representation."""
+    props: ConfigProps = {}
+
+    # Query GNSS constellations (CFG-NAVX)
+    result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
+    if result.success:
+        navx = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
+        props["gnss"] = gnss_mask_to_set(navx.nav_system)
+
+    # Query timing mode (CFG-TMODE)
+    result = conn.poll(CFG_TMODE.cls, CFG_TMODE.id)
+    if result.success:
+        tmode = parse_cfg_tmode(result.payload)  # type: ignore[arg-type]
+        if tmode.mode == 0:
+            props["time_mode"] = MobileMode()
+        elif tmode.mode == 1:
+            import math
+
+            acc = math.sqrt(tmode.svin_var_limit) if tmode.svin_var_limit >= 0 else 0
+            props["time_mode"] = SurveyMode(min_dur=tmode.svin_min_dur, acc=acc)
+        elif tmode.mode == 2:
+            import math
+
+            acc = math.sqrt(tmode.fixed_pos_var) if tmode.fixed_pos_var >= 0 else 0
+            props["time_mode"] = FixedMode(
+                ecef=(tmode.fixed_pos_x, tmode.fixed_pos_y, tmode.fixed_pos_z),
+                acc=acc,
+            )
+
+    # Query time pulse (CFG-TP)
+    result = conn.poll(CFG_TP.cls, CFG_TP.id)
+    if result.success:
+        tp = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
+        if tp.enabled:
+            props["time_pulse"] = TimePulse(
+                period=tp.interval_us / 1_000_000.0,
+                width=tp.width_us / 1_000_000.0,
+                time_gnss=time_source_to_gnss(tp.time_source),
+            )
+
+    # Query NMEA message rates
+    rates = query_nmea_rates(conn)
+    if rates.rates:
+        nmea_out: NMEARates = {}
+        for name, rate in rates.rates.items():
+            try:
+                nmea_out[NMEA(name)] = rate
+            except ValueError:
+                pass  # Skip unknown NMEA types
+        if nmea_out:
+            props["nmea_out"] = nmea_out
+
+    return props
+
+
+def check_config(target: ConfigProps, actual: ConfigProps) -> dict[str, dict[str, object]]:
+    """Return properties that don't match.
+
+    Args:
+        target: Expected properties
+        actual: Actual properties from receiver
+
+    Returns:
+        Dict of {property_name: {'expected': value, 'actual': value}} for mismatches
+    """
+    mismatches: dict[str, dict[str, object]] = {}
+    for key, expected in target.items():
+        actual_val = actual.get(key)
+        if actual_val != expected:
+            mismatches[key] = {"expected": expected, "actual": actual_val}
+    return mismatches
 
 
 def execute_job(
@@ -510,13 +612,12 @@ def execute_job(
     """Execute configuration job and return structured result.
 
     This is the main programmatic entry point for other tools.
-    Always queries config before and after operations.
     """
     result = CommandResult()
     changes = ConfigChanges()
 
-    # Probe receiver first (except for reset operations which don't need it)
-    if not (job.factory_reset or job.reset):
+    # Probe receiver first (except for factory/cold reset)
+    if job.reset not in (ResetMode.FACTORY, ResetMode.COLD):
         is_casic, version = probe_receiver(conn)
         if not is_casic:
             result.success = False
@@ -524,108 +625,104 @@ def execute_job(
             return result
         result.version = version
 
-    # Execute timing mode configuration
-    if job.survey is not None:
-        min_dur, acc = job.survey
-        if set_survey_mode(conn, min_dur, acc):
-            result.operations.append(f"Survey-in mode enabled: {min_dur}s, {acc}m accuracy")
-            changes.mark_nav()
-        else:
-            result.success = False
-            result.error = "Failed to set survey-in mode"
-            return result
+    # Apply properties if specified
+    if job.props is not None:
+        # Apply GNSS constellation configuration
+        if "gnss" in job.props:
+            mask = gnss_set_to_mask(job.props["gnss"])
+            if set_gnss(conn, mask):
+                systems = [g.value for g in job.props["gnss"]]
+                result.operations.append(f"GNSS constellations set: {', '.join(systems)}")
+                changes.mark_nav()
+            else:
+                result.success = False
+                result.error = "Failed to set GNSS constellations"
+                return result
 
-    if job.fixed_pos is not None:
-        ecef, acc = job.fixed_pos
-        if set_fixed_position(conn, ecef, acc):
-            result.operations.append(
-                f"Fixed position set: ECEF ({ecef[0]:.3f}, {ecef[1]:.3f}, {ecef[2]:.3f})"
-            )
-            changes.mark_nav()
-        else:
-            result.success = False
-            result.error = "Failed to set fixed position"
-            return result
+        # Apply timing mode configuration
+        if "time_mode" in job.props:
+            time_mode = job.props["time_mode"]
+            if isinstance(time_mode, MobileMode):
+                if set_mobile_mode(conn):
+                    result.operations.append("Mobile/auto mode enabled")
+                    changes.mark_nav()
+                else:
+                    result.success = False
+                    result.error = "Failed to set mobile mode"
+                    return result
+            elif isinstance(time_mode, SurveyMode):
+                if set_survey_mode(conn, time_mode.min_dur, time_mode.acc):
+                    result.operations.append(
+                        f"Survey-in mode enabled: {time_mode.min_dur}s, {time_mode.acc}m accuracy"
+                    )
+                    changes.mark_nav()
+                else:
+                    result.success = False
+                    result.error = "Failed to set survey-in mode"
+                    return result
+            elif isinstance(time_mode, FixedMode):
+                if set_fixed_position(conn, time_mode.ecef, time_mode.acc):
+                    ecef = time_mode.ecef
+                    result.operations.append(
+                        f"Fixed position set: ECEF ({ecef[0]:.3f}, {ecef[1]:.3f}, {ecef[2]:.3f})"
+                    )
+                    changes.mark_nav()
+                else:
+                    result.success = False
+                    result.error = "Failed to set fixed position"
+                    return result
 
-    if job.mobile:
-        if set_mobile_mode(conn):
-            result.operations.append("Mobile/auto mode enabled")
-            changes.mark_nav()
-        else:
-            result.success = False
-            result.error = "Failed to set mobile mode"
-            return result
+        # Apply time pulse configuration
+        if "time_pulse" in job.props:
+            tp = job.props["time_pulse"]
+            # Set pulse width
+            if set_pps(conn, tp.width):
+                if tp.width == 0:
+                    result.operations.append("PPS disabled")
+                else:
+                    result.operations.append(f"PPS enabled: {tp.width}s pulse width")
+                changes.mark_tp()
+            else:
+                result.success = False
+                result.error = "Failed to configure PPS"
+                return result
+            # Set time source
+            if set_time_gnss(conn, tp.time_gnss.value):
+                result.operations.append(f"PPS time source set to {tp.time_gnss.value}")
+                changes.mark_tp()
+            else:
+                result.success = False
+                result.error = "Failed to set PPS time source"
+                return result
 
-    # Execute NMEA message output configuration
-    if job.nmea_enable is not None:
-        enable_set = set(job.nmea_enable)
-        # Enable specified messages, disable all others
-        for msg_name in VALID_NMEA_MESSAGES:
-            if msg_name in enable_set:
-                if set_nmea_message_rate(conn, msg_name, 1):
-                    result.operations.append(f"Enabled {msg_name}")
+        # Apply NMEA output configuration
+        if "nmea_out" in job.props:
+            nmea_rates = job.props["nmea_out"]
+            # Build set of messages to enable
+            enable_set = {nmea.value for nmea in nmea_rates if nmea_rates[nmea] > 0}
+            # Enable specified messages, disable all others
+            for msg_name in VALID_NMEA_MESSAGES:
+                target_rate = 1 if msg_name in enable_set else 0
+                if set_nmea_message_rate(conn, msg_name, target_rate):
+                    if target_rate > 0:
+                        result.operations.append(f"Enabled {msg_name}")
+                    else:
+                        result.operations.append(f"Disabled {msg_name}")
                     changes.mark_msg()
                 else:
                     result.success = False
-                    result.error = f"Failed to enable {msg_name}"
+                    result.error = f"Failed to {'enable' if target_rate > 0 else 'disable'} {msg_name}"
                     return result
-            else:
-                if set_nmea_message_rate(conn, msg_name, 0):
-                    result.operations.append(f"Disabled {msg_name}")
-                    changes.mark_msg()
-                else:
-                    result.success = False
-                    result.error = f"Failed to disable {msg_name}"
-                    return result
-
-    # Execute GNSS constellation configuration
-    if job.gnss is not None:
-        if set_gnss(conn, job.gnss):
-            systems = []
-            if job.gnss & 0x01:
-                systems.append("GPS")
-            if job.gnss & 0x02:
-                systems.append("BDS")
-            if job.gnss & 0x04:
-                systems.append("GLONASS")
-            result.operations.append(f"GNSS constellations set: {', '.join(systems)}")
-            changes.mark_nav()
-        else:
-            result.success = False
-            result.error = "Failed to set GNSS constellations"
-            return result
-
-    # Execute time pulse (PPS) configuration
-    if job.pps_width is not None:
-        if set_pps(conn, job.pps_width):
-            if job.pps_width == 0:
-                result.operations.append("PPS disabled")
-            else:
-                result.operations.append(f"PPS enabled: {job.pps_width}s pulse width")
-            changes.mark_tp()
-        else:
-            result.success = False
-            result.error = "Failed to configure PPS"
-            return result
-
-    if job.time_gnss is not None:
-        if set_time_gnss(conn, job.time_gnss):
-            result.operations.append(f"PPS time source set to {job.time_gnss}")
-            changes.mark_tp()
-        else:
-            result.success = False
-            result.error = "Failed to set PPS time source"
-            return result
 
     # Execute NVM save operations (after configuration changes)
-    if job.save_mask is not None:
-        if save_config(conn, job.save_mask):
+    if job.save == SaveMode.ALL:
+        if save_config(conn, CFG_MASK_ALL):
             result.operations.append("All configuration saved to NVM")
         else:
             result.success = False
             result.error = "Failed to save configuration"
             return result
-    elif job.save_changes:
+    elif job.save == SaveMode.CHANGES:
         if changes.mask == 0:
             result.operations.append("Warning: No configuration changes to save")
         else:
@@ -636,25 +733,23 @@ def execute_job(
                 result.error = "Failed to save configuration"
                 return result
 
-    # Execute reload/reset operations (after save)
-    if job.reload:
+    # Execute reset operations (after save)
+    if job.reset == ResetMode.RELOAD:
         if load_config(conn, CFG_MASK_ALL):
             result.operations.append("Configuration reloaded from NVM")
         else:
             result.success = False
             result.error = "Failed to reload configuration"
             return result
-
-    if job.factory_reset:
+    elif job.reset == ResetMode.COLD:
+        reset_receiver(conn, factory=False)
+        result.operations.append("Cold start reset initiated")
+    elif job.reset == ResetMode.FACTORY:
         reset_receiver(conn, factory=True)
         result.operations.append("Factory reset initiated")
 
-    if job.reset:
-        reset_receiver(conn, factory=False)
-        result.operations.append("Cold start reset initiated")
-
     # Query config after operations (unless reset was performed)
-    if not (job.factory_reset or job.reset):
+    if job.reset not in (ResetMode.FACTORY, ResetMode.COLD):
         result.config_after = query_config(conn)
 
     return result

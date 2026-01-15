@@ -5,7 +5,8 @@ import struct
 import pytest
 
 from casic import CFG_MASK_TP, build_cfg_tp, parse_cfg_tp
-from job import ConfigChanges, parse_time_gnss_arg
+from casictool import GNSS, parse_time_gnss_arg
+from job import ConfigChanges
 
 
 class TestBuildCfgTp:
@@ -108,30 +109,30 @@ class TestBuildCfgTp:
 class TestParseTimeGnssArg:
     def test_gps(self) -> None:
         """Test GPS is valid."""
-        assert parse_time_gnss_arg("GPS") == "GPS"
+        assert parse_time_gnss_arg("GPS") == GNSS.GPS
 
     def test_bds(self) -> None:
         """Test BDS is valid."""
-        assert parse_time_gnss_arg("BDS") == "BDS"
+        assert parse_time_gnss_arg("BDS") == GNSS.BDS
 
     def test_glo(self) -> None:
         """Test GLO is valid."""
-        assert parse_time_gnss_arg("GLO") == "GLO"
+        assert parse_time_gnss_arg("GLO") == GNSS.GLO
 
     def test_glonass_normalized(self) -> None:
         """Test GLONASS is normalized to GLO."""
-        assert parse_time_gnss_arg("GLONASS") == "GLO"
+        assert parse_time_gnss_arg("GLONASS") == GNSS.GLO
 
     def test_case_insensitive(self) -> None:
         """Test case insensitivity."""
-        assert parse_time_gnss_arg("gps") == "GPS"
-        assert parse_time_gnss_arg("Bds") == "BDS"
-        assert parse_time_gnss_arg("gLo") == "GLO"
+        assert parse_time_gnss_arg("gps") == GNSS.GPS
+        assert parse_time_gnss_arg("Bds") == GNSS.BDS
+        assert parse_time_gnss_arg("gLo") == GNSS.GLO
 
     def test_whitespace_trimmed(self) -> None:
         """Test whitespace is trimmed."""
-        assert parse_time_gnss_arg(" GPS ") == "GPS"
-        assert parse_time_gnss_arg("\tBDS\n") == "BDS"
+        assert parse_time_gnss_arg(" GPS ") == GNSS.GPS
+        assert parse_time_gnss_arg("\tBDS\n") == GNSS.BDS
 
     def test_invalid_system(self) -> None:
         """Test invalid system raises ValueError."""

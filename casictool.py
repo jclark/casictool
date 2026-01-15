@@ -8,15 +8,21 @@ import sys
 
 import serial
 
-from casic import CFG_MASK_ALL, CasicConnection
+from casic import CasicConnection
 from job import (
+    GNSS,
+    NMEA,
     CommandResult,
     ConfigJob,
+    ConfigProps,
+    FixedMode,
+    MobileMode,
+    ResetMode,
+    SaveMode,
+    SurveyMode,
+    TimePulse,
     execute_job,
     parse_ecef_coords,
-    parse_gnss_arg,
-    parse_nmea_out,
-    parse_time_gnss_arg,
 )
 
 
@@ -162,68 +168,164 @@ def validate_args(args: argparse.Namespace) -> str | None:
     return None
 
 
+VALID_GNSS = {"GPS", "BDS", "GLO", "GLN", "GLONASS"}
+UNSUPPORTED_GNSS = {"GAL", "GALILEO", "QZSS", "NAVIC", "SBAS"}
+VALID_NMEA_MESSAGES = {"GGA", "GLL", "GSA", "GSV", "RMC", "VTG", "ZDA"}
+VALID_TIME_GNSS = {"GPS", "BDS", "GLO", "GLONASS"}
+
+
+def parse_gnss_arg(gnss_str: str) -> set[GNSS]:
+    """Parse --gnss argument into set of GNSS enums.
+
+    Args:
+        gnss_str: Comma-separated list (e.g., "GPS,BDS,GLO")
+
+    Returns:
+        Set of GNSS enums
+
+    Raises:
+        ValueError: If unknown or unsupported constellation specified
+    """
+    result: set[GNSS] = set()
+
+    for item in gnss_str.split(","):
+        item = item.strip().upper()
+        if not item:
+            continue
+        if item in UNSUPPORTED_GNSS:
+            raise ValueError(
+                f"Unsupported constellation: {item}. "
+                "This receiver only supports GPS, BDS, and GLONASS."
+            )
+        if item not in VALID_GNSS:
+            raise ValueError(f"Unknown constellation: {item}")
+
+        if item == "GPS":
+            result.add(GNSS.GPS)
+        elif item == "BDS":
+            result.add(GNSS.BDS)
+        elif item in ("GLO", "GLN", "GLONASS"):
+            result.add(GNSS.GLO)
+
+    return result
+
+
+def parse_nmea_out(nmea_str: str) -> dict[NMEA, int]:
+    """Parse --nmea-out argument into NMEARates dict.
+
+    Args:
+        nmea_str: Comma-separated message list (e.g., "GGA,RMC,ZDA")
+
+    Returns:
+        Dict mapping NMEA enums to rate (1 = enabled)
+    """
+    result: dict[NMEA, int] = {}
+
+    for item in nmea_str.split(","):
+        item = item.strip().upper()
+        if not item:
+            continue
+        if item not in VALID_NMEA_MESSAGES:
+            raise ValueError(f"Unknown NMEA message: {item}")
+        result[NMEA(item)] = 1
+
+    return result
+
+
+def parse_time_gnss_arg(system: str) -> GNSS:
+    """Validate and parse --time-gnss argument.
+
+    Args:
+        system: Time source constellation name
+
+    Returns:
+        GNSS enum
+
+    Raises:
+        ValueError: If unknown time source specified
+    """
+    system = system.strip().upper()
+    if system == "GLONASS":
+        system = "GLO"
+    if system not in {"GPS", "BDS", "GLO"}:
+        raise ValueError(f"Unknown time source: {system}. Use GPS, BDS, or GLO.")
+    return GNSS(system)
+
+
 def build_job(args: argparse.Namespace) -> tuple[ConfigJob, str | None]:
     """Build ConfigJob from parsed arguments.
 
     Returns (job, error_message). error_message is None on success.
     """
-    job = ConfigJob()
+    props: ConfigProps = {}
 
     # Parse and set timing mode
     if args.survey:
-        job.survey = (args.survey_time, args.survey_acc)
+        props["time_mode"] = SurveyMode(min_dur=args.survey_time, acc=args.survey_acc)
 
     if args.fixed_pos_ecef:
         try:
             ecef = parse_ecef_coords(args.fixed_pos_ecef)
-            job.fixed_pos = (ecef, args.fixed_pos_acc)
+            props["time_mode"] = FixedMode(ecef=ecef, acc=args.fixed_pos_acc)
         except ValueError as e:
-            return job, str(e)
+            return ConfigJob(), str(e)
 
     if args.mobile:
-        job.mobile = True
+        props["time_mode"] = MobileMode()
 
     # Parse and set NMEA output configuration
     if args.nmea_out:
         try:
-            job.nmea_enable = parse_nmea_out(args.nmea_out)
+            props["nmea_out"] = parse_nmea_out(args.nmea_out)
         except ValueError as e:
-            return job, str(e)
+            return ConfigJob(), str(e)
 
     # Parse and set GNSS configuration
     if args.gnss:
         try:
-            job.gnss = parse_gnss_arg(args.gnss)
+            props["gnss"] = parse_gnss_arg(args.gnss)
         except ValueError as e:
-            return job, str(e)
+            return ConfigJob(), str(e)
 
     # Parse and set PPS configuration
-    if args.pps is not None:
-        if args.pps < 0 or args.pps > 1.0:
-            return job, "PPS width must be between 0 and 1.0 seconds"
-        job.pps_width = args.pps
+    if args.pps is not None or args.time_gnss:
+        if args.pps is not None and (args.pps < 0 or args.pps > 1.0):
+            return ConfigJob(), "PPS width must be between 0 and 1.0 seconds"
 
-    if args.time_gnss:
-        try:
-            job.time_gnss = parse_time_gnss_arg(args.time_gnss)
-        except ValueError as e:
-            return job, str(e)
+        # Default values
+        width = args.pps if args.pps is not None else 0.0001  # 100us default
+        time_gnss = GNSS.GPS  # Default to GPS
 
-    # Set NVM operations
+        if args.time_gnss:
+            try:
+                time_gnss = parse_time_gnss_arg(args.time_gnss)
+            except ValueError as e:
+                return ConfigJob(), str(e)
+
+        props["time_pulse"] = TimePulse(period=1.0, width=width, time_gnss=time_gnss)
+
+    # Determine save mode
+    save = SaveMode.NONE
     if args.save_all:
-        job.save_mask = CFG_MASK_ALL
+        save = SaveMode.ALL
     elif args.save:
-        job.save_changes = True
+        save = SaveMode.CHANGES
 
+    # Determine reset mode
+    reset = ResetMode.NONE
     if args.reload:
-        job.reload = True
-    if args.reset:
-        job.reset = True
-    if args.factory_reset:
-        job.factory_reset = True
+        reset = ResetMode.RELOAD
+    elif args.reset:
+        reset = ResetMode.COLD
+    elif args.factory_reset:
+        reset = ResetMode.FACTORY
 
-    # Set show_config
-    job.show_config = args.show_config
+    job = ConfigJob(
+        props=props if props else None,
+        save=save,
+        reset=reset,
+        show_config=args.show_config,
+    )
 
     return job, None
 
@@ -231,18 +333,9 @@ def build_job(args: argparse.Namespace) -> tuple[ConfigJob, str | None]:
 def has_any_operation(job: ConfigJob) -> bool:
     """Check if the job specifies any operations."""
     return (
-        job.survey is not None
-        or job.fixed_pos is not None
-        or job.mobile
-        or job.gnss is not None
-        or job.nmea_enable is not None
-        or job.pps_width is not None
-        or job.time_gnss is not None
-        or job.save_mask is not None
-        or job.save_changes
-        or job.reload
-        or job.reset
-        or job.factory_reset
+        job.props is not None
+        or job.save != SaveMode.NONE
+        or job.reset != ResetMode.NONE
         or job.show_config
     )
 
@@ -258,18 +351,9 @@ def print_result(result: CommandResult, job: ConfigJob) -> None:
 
     # Print configuration if show_config and no other operations
     has_config_ops = (
-        job.survey is not None
-        or job.fixed_pos is not None
-        or job.mobile
-        or job.gnss is not None
-        or job.nmea_enable is not None
-        or job.pps_width is not None
-        or job.time_gnss is not None
-        or job.save_mask is not None
-        or job.save_changes
-        or job.reload
-        or job.reset
-        or job.factory_reset
+        job.props is not None
+        or job.save != SaveMode.NONE
+        or job.reset != ResetMode.NONE
     )
 
     if job.show_config and not has_config_ops:

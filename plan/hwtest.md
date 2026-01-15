@@ -86,8 +86,9 @@ Using ConfigProps (see `plan/configprops.md`), tests are just data - no per-test
 ```python
 def verify(conn, props: ConfigProps) -> TestResult:
     """Apply props and verify they took effect."""
-    apply_config(conn, props)
-    actual = query_config(conn)
+    job = ConfigJob(props=props)
+    execute_job(conn, job)
+    actual = query_config_props(conn)
     mismatches = check_config(props, actual)
     if mismatches:
         return Fail(mismatches)
@@ -97,23 +98,23 @@ def verify(conn, props: ConfigProps) -> TestResult:
 Test cases are lists of ConfigProps:
 
 ```python
-GNSS_TESTS = [
-    {'gnss': {'GPS'}},
-    {'gnss': {'BDS'}},
-    {'gnss': {'GLO'}},
-    {'gnss': {'GPS', 'BDS'}},
-    {'gnss': {'GPS', 'BDS', 'GLO'}},
+GNSS_TESTS: list[ConfigProps] = [
+    {'gnss': {GNSS.GPS}},
+    {'gnss': {GNSS.BDS}},
+    {'gnss': {GNSS.GLO}},
+    {'gnss': {GNSS.GPS, GNSS.BDS}},
+    {'gnss': {GNSS.GPS, GNSS.BDS, GNSS.GLO}},
 ]
 
-PPS_TESTS = [
-    {'time_pulse': TimePulse(width=0.0001, time_gnss='GPS')},
-    {'time_pulse': TimePulse(width=0.001, time_gnss='BDS')},
+PPS_TESTS: list[ConfigProps] = [
+    {'time_pulse': TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GPS)},
+    {'time_pulse': TimePulse(period=1.0, width=0.001, time_gnss=GNSS.BDS)},
 ]
 
-TIMING_TESTS = [
-    {'mode': 'mobile'},
-    {'mode': 'survey', 'survey': Survey(min_dur=60, acc=50.0)},
-    {'mode': 'fixed', 'fixed_pos': FixedPosition(ecef=(X, Y, Z), acc=10.0)},
+TIMING_TESTS: list[ConfigProps] = [
+    {'time_mode': MobileMode()},
+    {'time_mode': SurveyMode(min_dur=60, acc=50.0)},
+    {'time_mode': FixedMode(ecef=(X, Y, Z), acc=10.0)},
 ]
 ```
 
@@ -169,10 +170,13 @@ With `--persist`: Also verifies NVM operations using the same ConfigProps patter
 ```python
 def verify_persist(conn, props: ConfigProps, alt_props: ConfigProps) -> TestResult:
     """Verify save/reload round-trip."""
-    apply_config(conn, props, save=True)   # Set X, save
-    apply_config(conn, alt_props)           # Set Y (different)
-    reload_config(conn)                     # Reload from NVM
-    actual = query_config(conn)
+    # Set X, save to NVM
+    execute_job(conn, ConfigJob(props=props, save=SaveMode.CHANGES))
+    # Set Y (different) without saving
+    execute_job(conn, ConfigJob(props=alt_props))
+    # Reload from NVM - should restore X
+    execute_job(conn, ConfigJob(reset=ResetMode.RELOAD))
+    actual = query_config_props(conn)
     mismatches = check_config(props, actual)  # Should be X, not Y
     if mismatches:
         return Fail(mismatches)
@@ -183,14 +187,15 @@ def verify_persist(conn, props: ConfigProps, alt_props: ConfigProps) -> TestResu
 
 ```python
 FACTORY_DEFAULTS: ConfigProps = {
-    'gnss': {'GPS', 'BDS', 'GLO'},  # To be verified
-    'mode': 'mobile',
+    'gnss': {GNSS.GPS, GNSS.BDS, GNSS.GLO},  # To be verified
+    'time_mode': MobileMode(),
     # ... other defaults
 }
 
 def verify_factory_reset(conn) -> TestResult:
-    factory_reset(conn)
-    actual = query_config(conn)
+    execute_job(conn, ConfigJob(reset=ResetMode.FACTORY))
+    time.sleep(2)  # Wait for receiver to restart
+    actual = query_config_props(conn)
     mismatches = check_config(FACTORY_DEFAULTS, actual)
     if mismatches:
         return Fail(mismatches)
