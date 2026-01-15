@@ -16,6 +16,7 @@ from job import (
     parse_ecef_coords,
     parse_gnss_arg,
     parse_nmea_out,
+    parse_time_gnss_arg,
 )
 
 
@@ -91,6 +92,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Enable GNSS constellations (GPS,BDS,GLO). "
         "Disables constellations not listed. "
         "Note: GAL, QZSS, NAVIC, SBAS not supported by this receiver.",
+    )
+
+    # Time pulse (PPS) group
+    pps_group = parser.add_argument_group("Time Pulse (PPS)")
+    pps_group.add_argument(
+        "--pps",
+        type=float,
+        metavar="WIDTH",
+        help="Set PPS pulse width in seconds (0 to disable, max 1.0)",
+    )
+    pps_group.add_argument(
+        "--time-gnss",
+        type=str,
+        metavar="SYSTEM",
+        help="Set PPS time source (GPS, BDS, GLO)",
     )
 
     # NVM operations group
@@ -181,6 +197,18 @@ def build_job(args: argparse.Namespace) -> tuple[ConfigJob, str | None]:
         except ValueError as e:
             return job, str(e)
 
+    # Parse and set PPS configuration
+    if args.pps is not None:
+        if args.pps < 0 or args.pps > 1.0:
+            return job, "PPS width must be between 0 and 1.0 seconds"
+        job.pps_width = args.pps
+
+    if args.time_gnss:
+        try:
+            job.time_gnss = parse_time_gnss_arg(args.time_gnss)
+        except ValueError as e:
+            return job, str(e)
+
     # Set NVM operations
     if args.save_all:
         job.save_mask = CFG_MASK_ALL
@@ -208,6 +236,8 @@ def has_any_operation(job: ConfigJob) -> bool:
         or job.mobile
         or job.gnss is not None
         or job.nmea_enable is not None
+        or job.pps_width is not None
+        or job.time_gnss is not None
         or job.save_mask is not None
         or job.save_changes
         or job.reload
@@ -233,6 +263,8 @@ def print_result(result: CommandResult, job: ConfigJob) -> None:
         or job.mobile
         or job.gnss is not None
         or job.nmea_enable is not None
+        or job.pps_width is not None
+        or job.time_gnss is not None
         or job.save_mask is not None
         or job.save_changes
         or job.reload

@@ -13,6 +13,7 @@ from casic import (
     CFG_MASK_ALL,
     CFG_MASK_MSG,
     CFG_MASK_NAV,
+    CFG_MASK_TP,
     CFG_MSG,
     CFG_NAVX,
     CFG_PRT,
@@ -31,6 +32,7 @@ from casic import (
     build_cfg_navx,
     build_cfg_rst,
     build_cfg_tmode,
+    build_cfg_tp,
     parse_cfg_msg,
     parse_cfg_navx,
     parse_cfg_prt,
@@ -75,6 +77,10 @@ class ConfigChanges:
     def mark_msg(self) -> None:
         """Mark message output configuration as changed."""
         self.mask |= CFG_MASK_MSG
+
+    def mark_tp(self) -> None:
+        """Mark time pulse configuration as changed (CFG-TP)."""
+        self.mask |= CFG_MASK_TP
 
 
 # ============================================================================
@@ -357,6 +363,110 @@ def parse_gnss_arg(gnss_str: str) -> int:
     return mask
 
 
+# Time GNSS (PPS time source) names
+VALID_TIME_GNSS = {"GPS", "BDS", "GLO", "GLONASS"}
+
+
+def parse_time_gnss_arg(system: str) -> str:
+    """Validate and normalize --time-gnss argument.
+
+    Args:
+        system: Time source constellation name
+
+    Returns:
+        Normalized system name (GPS, BDS, or GLO)
+
+    Raises:
+        ValueError: If unknown time source specified
+    """
+    system = system.strip().upper()
+    if system == "GLONASS":
+        system = "GLO"
+    if system not in {"GPS", "BDS", "GLO"}:
+        raise ValueError(f"Unknown time source: {system}. Use GPS, BDS, or GLO.")
+    return system
+
+
+# ============================================================================
+# PPS Command Functions
+# ============================================================================
+
+
+def set_pps(conn: CasicConnection, width_seconds: float) -> bool:
+    """Configure PPS output using read-modify-write.
+
+    Args:
+        conn: Active CASIC connection
+        width_seconds: Pulse width in seconds (0 to disable)
+
+    Returns:
+        True if ACK received, False on NAK or timeout
+    """
+    # Query current config to preserve other settings
+    result = conn.poll(CFG_TP.cls, CFG_TP.id)
+    if not result.success:
+        return False
+
+    current = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
+
+    if width_seconds == 0:
+        enable = 0
+        width_us = current.width_us  # Preserve existing width
+    else:
+        enable = 1
+        width_us = int(width_seconds * 1_000_000)
+
+    payload = build_cfg_tp(
+        interval_us=current.interval_us,
+        width_us=width_us,
+        enable=enable,
+        polarity=current.polarity,
+        time_ref=current.time_ref,
+        time_source=current.time_source,
+        user_delay=current.user_delay,
+    )
+    return conn.send_and_wait_ack(CFG_TP.cls, CFG_TP.id, payload)
+
+
+def set_time_gnss(conn: CasicConnection, system: str) -> bool:
+    """Set PPS time source constellation using read-modify-write.
+
+    Args:
+        conn: Active CASIC connection
+        system: "GPS", "BDS", or "GLO"
+
+    Returns:
+        True if ACK received, False on NAK or timeout
+    """
+    time_source_map = {
+        "GPS": 0,
+        "BDS": 1,
+        "GLO": 2,
+    }
+
+    time_source = time_source_map.get(system.upper())
+    if time_source is None:
+        return False
+
+    # Query current config
+    result = conn.poll(CFG_TP.cls, CFG_TP.id)
+    if not result.success:
+        return False
+
+    current = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
+
+    payload = build_cfg_tp(
+        interval_us=current.interval_us,
+        width_us=current.width_us,
+        enable=current.enable,
+        polarity=current.polarity,
+        time_ref=current.time_ref,
+        time_source=time_source,
+        user_delay=current.user_delay,
+    )
+    return conn.send_and_wait_ack(CFG_TP.cls, CFG_TP.id, payload)
+
+
 # ============================================================================
 # ConfigJob and execute_job
 # ============================================================================
@@ -376,6 +486,10 @@ class ConfigJob:
 
     # NMEA output
     nmea_enable: list[str] | None = None  # Messages to enable (others disabled)
+
+    # Time pulse (PPS) configuration
+    pps_width: float | None = None  # Pulse width in seconds (0 to disable)
+    time_gnss: str | None = None  # Time source: "GPS", "BDS", "GLO"
 
     # NVM operations (mutually exclusive)
     save_mask: int | None = None  # Save these sections to NVM
@@ -479,6 +593,28 @@ def execute_job(
         else:
             result.success = False
             result.error = "Failed to set GNSS constellations"
+            return result
+
+    # Execute time pulse (PPS) configuration
+    if job.pps_width is not None:
+        if set_pps(conn, job.pps_width):
+            if job.pps_width == 0:
+                result.operations.append("PPS disabled")
+            else:
+                result.operations.append(f"PPS enabled: {job.pps_width}s pulse width")
+            changes.mark_tp()
+        else:
+            result.success = False
+            result.error = "Failed to configure PPS"
+            return result
+
+    if job.time_gnss is not None:
+        if set_time_gnss(conn, job.time_gnss):
+            result.operations.append(f"PPS time source set to {job.time_gnss}")
+            changes.mark_tp()
+        else:
+            result.success = False
+            result.error = "Failed to set PPS time source"
             return result
 
     # Execute NVM save operations (after configuration changes)

@@ -800,6 +800,38 @@ def build_cfg_rst(nav_bbr_mask: int, reset_mode: int, start_mode: int) -> bytes:
     return struct.pack("<HBB", nav_bbr_mask, reset_mode, start_mode)
 
 
+def build_cfg_tp(
+    interval_us: int = 1000000,
+    width_us: int = 100000,
+    enable: int = 1,
+    polarity: int = 0,
+    time_ref: int = 0,
+    time_source: int = 0,
+    user_delay: float = 0.0,
+) -> bytes:
+    """Build CFG-TP payload (16 bytes).
+
+    Args:
+        interval_us: Pulse interval in microseconds (1000000 = 1Hz)
+        width_us: Pulse width in microseconds
+        enable: 0=Off, 1=On, 2=Auto, 3=FixOnly
+        polarity: 0=Rising edge, 1=Falling edge
+        time_ref: 0=UTC, 1=Satellite time
+        time_source: 0=GPS, 1=BDS, 2=GLONASS
+        user_delay: User delay compensation in seconds
+    """
+    return struct.pack(
+        "<IIbbbBf",
+        interval_us,
+        width_us,
+        enable,
+        polarity,
+        time_ref,
+        time_source,
+        user_delay,
+    )
+
+
 def build_cfg_navx(config: NavEngineConfig, nav_system: int | None = None) -> bytes:
     """Build CFG-NAVX payload (44 bytes) from existing config.
 

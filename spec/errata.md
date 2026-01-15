@@ -34,3 +34,17 @@ The MON-VER (0x0A 0x04) query message is not supported on all receivers. Some re
 - Each response is 4 bytes: cls (U1), id (U1), rate (U2)
 - Sending CFG-MSG with a 2-byte payload (cls, id) to query a specific message results in ACK-NAK
 - The spec does not document the query response format or that it returns all message rates at once
+
+## CFG-TP timeSource Field
+
+The timeSource field in CFG-TP has two modes per constellation:
+
+| Value | Description |
+|-------|-------------|
+| 0 | GPS |
+| 1 | BDS |
+| 2 | GLONASS |
+| 4 | BDS (mainly) - prefer BDS, auto-fallback to others if unavailable |
+| 5 | GPS (mainly) - prefer GPS, auto-fallback to others if unavailable |
+| 6 | GLONASS (mainly) - prefer GLONASS, auto-fallback to others if unavailable |
+
