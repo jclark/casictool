@@ -17,13 +17,14 @@ dev = [
     "pytest-xdist>=3.0.0",
     "mypy>=1.0",
     "ruff>=0.1.0",
+    "types-pyserial",
 ]
 
 [project.scripts]
 casictool = "casictool:main"
 
 [tool.setuptools]
-py-modules = ["casictool"]
+py-modules = ["casictool", "casic"]
 
 [tool.mypy]
 strict = true
