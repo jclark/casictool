@@ -14,7 +14,7 @@ from casic import (
     CFG_CFG,
     CFG_MASK_ALL,
     CFG_MASK_MSG,
-    CFG_MASK_RATE,
+    CFG_MASK_NAV,
     CFG_MSG,
     CFG_NAVX,
     CFG_PRT,
@@ -30,6 +30,7 @@ from casic import (
     VersionInfo,
     build_cfg_cfg,
     build_cfg_msg_set,
+    build_cfg_navx,
     build_cfg_rst,
     build_cfg_tmode,
     parse_cfg_msg,
@@ -48,9 +49,9 @@ class ConfigChanges:
     def __init__(self) -> None:
         self.mask = 0
 
-    def mark_rate(self) -> None:
-        """Mark rate/timing mode configuration as changed."""
-        self.mask |= CFG_MASK_RATE
+    def mark_nav(self) -> None:
+        """Mark navigation configuration as changed (CFG-RATE, CFG-TMODE, CFG-NAVX)."""
+        self.mask |= CFG_MASK_NAV
 
     def mark_msg(self) -> None:
         """Mark message output configuration as changed."""
@@ -222,6 +223,76 @@ def parse_nmea_out(nmea_str: str) -> list[str]:
     return enable
 
 
+# GNSS constellation names and aliases
+VALID_GNSS = {"GPS", "BDS", "GLO", "GLN", "GLONASS"}
+UNSUPPORTED_GNSS = {"GAL", "GALILEO", "QZSS", "NAVIC", "SBAS"}
+
+
+def parse_gnss_arg(gnss_str: str) -> int:
+    """Parse --gnss argument into navSystem bitmask.
+
+    Args:
+        gnss_str: Comma-separated list (e.g., "GPS,BDS,GLO")
+
+    Returns:
+        Bitmask: B0=GPS, B1=BDS, B2=GLONASS
+
+    Raises:
+        ValueError: If unknown or unsupported constellation specified
+    """
+    mask = 0
+
+    for item in gnss_str.split(","):
+        item = item.strip().upper()
+        if not item:
+            continue
+        if item in UNSUPPORTED_GNSS:
+            raise ValueError(
+                f"Unsupported constellation: {item}. "
+                "This receiver only supports GPS, BDS, and GLONASS."
+            )
+        if item not in VALID_GNSS:
+            raise ValueError(f"Unknown constellation: {item}")
+
+        if item == "GPS":
+            mask |= 0x01
+        elif item == "BDS":
+            mask |= 0x02
+        elif item in ("GLO", "GLN", "GLONASS"):
+            mask |= 0x04
+
+    return mask
+
+
+def set_gnss(conn: CasicConnection, nav_system: int) -> bool:
+    """Configure GNSS constellation selection using read-modify-write.
+
+    Steps:
+    1. Query current CFG-NAVX configuration
+    2. Modify nav_system field only
+    3. Send complete payload back to receiver
+    4. Wait for ACK
+
+    Args:
+        conn: Active CASIC connection
+        nav_system: Bitmask (B0=GPS, B1=BDS, B2=GLONASS)
+
+    Returns:
+        True if ACK received, False on NAK or timeout
+    """
+    # Query current config
+    result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
+    if not result.success:
+        return False
+
+    # Parse and modify
+    config = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
+    payload = build_cfg_navx(config, nav_system=nav_system)
+
+    # Send and wait for ACK
+    return conn.send_and_wait_ack(CFG_NAVX.cls, CFG_NAVX.id, payload)
+
+
 def set_survey_mode(conn: CasicConnection, min_dur: int, acc: float) -> bool:
     """Configure receiver for survey-in mode."""
     payload = build_cfg_tmode(
@@ -315,6 +386,17 @@ def main() -> int:
         "(GGA,GLL,GSA,GSV,RMC,VTG,ZDA). Messages not listed will be disabled.",
     )
 
+    # GNSS constellation group
+    gnss_group = parser.add_argument_group("GNSS Configuration")
+    gnss_group.add_argument(
+        "--gnss",
+        type=str,
+        metavar="SYSTEMS",
+        help="Enable GNSS constellations (GPS,BDS,GLO). "
+        "Disables constellations not listed. "
+        "Note: GAL, QZSS, NAVIC, SBAS not supported by this receiver.",
+    )
+
     # NVM operations group
     nvm_group = parser.add_argument_group("Configuration Storage")
     nvm_group.add_argument(
@@ -386,14 +468,24 @@ def main() -> int:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
+    # Parse GNSS configuration before opening connection
+    gnss_mask: int | None = None
+    if args.gnss:
+        try:
+            gnss_mask = parse_gnss_arg(args.gnss)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
     # Track configuration changes for --save
     changes = ConfigChanges()
 
     # Determine if any operation requires a connection
     has_timing_op = args.survey or args.fixed_pos_ecef or args.mobile
     has_nmea_op = args.nmea_out is not None
+    has_gnss_op = args.gnss is not None
     has_nvm_op = args.save or args.save_all or args.reload or args.reset or args.factory_reset
-    has_any_op = has_timing_op or has_nmea_op or has_nvm_op or args.show_config
+    has_any_op = has_timing_op or has_nmea_op or has_gnss_op or has_nvm_op or args.show_config
 
     if not has_any_op:
         parser.print_help()
@@ -419,7 +511,7 @@ def main() -> int:
                         f"Survey-in mode enabled: {args.survey_time}s, "
                         f"{args.survey_acc}m accuracy"
                     )
-                    changes.mark_rate()
+                    changes.mark_nav()
                 else:
                     print("Error: Failed to set survey-in mode", file=sys.stderr)
                     return 1
@@ -429,7 +521,7 @@ def main() -> int:
                     print(
                         f"Fixed position set: ECEF ({ecef[0]:.3f}, {ecef[1]:.3f}, {ecef[2]:.3f})"
                     )
-                    changes.mark_rate()
+                    changes.mark_nav()
                 else:
                     print("Error: Failed to set fixed position", file=sys.stderr)
                     return 1
@@ -437,7 +529,7 @@ def main() -> int:
             if args.mobile:
                 if set_mobile_mode(conn):
                     print("Mobile/auto mode enabled")
-                    changes.mark_rate()
+                    changes.mark_nav()
                 else:
                     print("Error: Failed to set mobile mode", file=sys.stderr)
                     return 1
@@ -461,6 +553,22 @@ def main() -> int:
                         else:
                             print(f"Error: Failed to disable {msg_name}", file=sys.stderr)
                             return 1
+
+            # Execute GNSS constellation configuration
+            if gnss_mask is not None:
+                if set_gnss(conn, gnss_mask):
+                    systems = []
+                    if gnss_mask & 0x01:
+                        systems.append("GPS")
+                    if gnss_mask & 0x02:
+                        systems.append("BDS")
+                    if gnss_mask & 0x04:
+                        systems.append("GLONASS")
+                    print(f"GNSS constellations set: {', '.join(systems)}")
+                    changes.mark_nav()  # CFG-NAVX uses CFG_MASK_RATE for save
+                else:
+                    print("Error: Failed to set GNSS constellations", file=sys.stderr)
+                    return 1
 
             # Execute NVM save operations (after configuration changes)
             if args.save_all:
@@ -496,7 +604,7 @@ def main() -> int:
                 print("Cold start reset initiated")
 
             # Show configuration (only if no other operations)
-            if args.show_config and not has_timing_op and not has_nmea_op and not has_nvm_op:
+            if args.show_config and not has_timing_op and not has_nmea_op and not has_gnss_op and not has_nvm_op:
                 if version:
                     print(f"CASIC receiver: {version.sw_version} / {version.hw_version}")
                 else:

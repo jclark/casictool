@@ -24,8 +24,8 @@ from casic import (
     CFG_MASK_GROUP,
     CFG_MASK_INF,
     CFG_MASK_MSG,
+    CFG_MASK_NAV,
     CFG_MASK_PORT,
-    CFG_MASK_RATE,
     CFG_MASK_TP,
     CFG_MSG,
     CFG_NAVX,
@@ -45,6 +45,7 @@ from casic import (
     TimingModeConfig,
     build_cfg_cfg,
     build_cfg_msg_set,
+    build_cfg_navx,
     build_cfg_rst,
     calc_checksum,
     pack_msg,
@@ -55,7 +56,7 @@ from casic import (
     parse_cfg_tp,
     parse_msg,
 )
-from casictool import ConfigChanges, parse_nmea_out
+from casictool import ConfigChanges, parse_gnss_arg, parse_nmea_out
 
 
 class TestMsgID:
@@ -369,13 +370,13 @@ class TestCfgMaskConstants:
         assert CFG_MASK_PORT == 0x0001
         assert CFG_MASK_MSG == 0x0002
         assert CFG_MASK_INF == 0x0004
-        assert CFG_MASK_RATE == 0x0008
+        assert CFG_MASK_NAV == 0x0008
         assert CFG_MASK_TP == 0x0010
         assert CFG_MASK_GROUP == 0x0020
         assert CFG_MASK_ALL == 0xFFFF
 
     def test_cfg_masks_are_distinct_bits(self) -> None:
-        masks = [CFG_MASK_PORT, CFG_MASK_MSG, CFG_MASK_INF, CFG_MASK_RATE, CFG_MASK_TP, CFG_MASK_GROUP]
+        masks = [CFG_MASK_PORT, CFG_MASK_MSG, CFG_MASK_INF, CFG_MASK_NAV, CFG_MASK_TP, CFG_MASK_GROUP]
         # Each mask should be a single bit
         for mask in masks:
             assert bin(mask).count("1") == 1
@@ -436,10 +437,10 @@ class TestBuildCfgCfg:
         assert mask == 0xFFFF
         assert mode == 0  # Clear
 
-    def test_save_rate_only(self) -> None:
-        payload = build_cfg_cfg(CFG_MASK_RATE, mode=1)
+    def test_save_nav_only(self) -> None:
+        payload = build_cfg_cfg(CFG_MASK_NAV, mode=1)
         mask, mode, reserved = struct.unpack("<HBB", payload)
-        assert mask == 0x0008  # CFG_MASK_RATE
+        assert mask == 0x0008  # CFG_MASK_NAV
         assert mode == 1
 
 
@@ -529,6 +530,146 @@ class TestParseNmeaOut:
         assert enable == ["GGA", "GLL", "GSA", "GSV", "RMC", "VTG", "ZDA"]
 
 
+class TestBuildCfgNavx:
+    def test_gps_only(self) -> None:
+        """Test building payload with GPS only."""
+        config = NavEngineConfig(
+            mask=0xFFFF, dyn_model=0, fix_mode=3, min_svs=4, max_svs=12,
+            min_cno=6, ini_fix_3d=1, min_elev=5, dr_limit=60,
+            nav_system=0x07, wn_rollover=2000, fixed_alt=0.0, fixed_alt_var=0.0,
+            p_dop=25.0, t_dop=25.0, p_acc=100.0, t_acc=100.0, static_hold_th=0.0
+        )
+        payload = build_cfg_navx(config, nav_system=0x01)
+        assert len(payload) == 44
+        # Check nav_system is at offset 13
+        assert payload[13] == 0x01
+
+    def test_all_constellations(self) -> None:
+        """Test building payload with all constellations enabled."""
+        config = NavEngineConfig(
+            mask=0xFFFF, dyn_model=0, fix_mode=3, min_svs=4, max_svs=12,
+            min_cno=6, ini_fix_3d=1, min_elev=5, dr_limit=60,
+            nav_system=0x01, wn_rollover=2000, fixed_alt=0.0, fixed_alt_var=0.0,
+            p_dop=25.0, t_dop=25.0, p_acc=100.0, t_acc=100.0, static_hold_th=0.0
+        )
+        payload = build_cfg_navx(config, nav_system=0x07)
+        assert payload[13] == 0x07
+
+    def test_preserves_other_fields(self) -> None:
+        """Test that other fields are preserved when only changing nav_system."""
+        config = NavEngineConfig(
+            mask=0xFFFF, dyn_model=3, fix_mode=2, min_svs=4, max_svs=12,
+            min_cno=6, ini_fix_3d=1, min_elev=10, dr_limit=60,
+            nav_system=0x07, wn_rollover=2000, fixed_alt=100.0, fixed_alt_var=1.0,
+            p_dop=25.0, t_dop=25.0, p_acc=100.0, t_acc=100.0, static_hold_th=0.5
+        )
+        payload = build_cfg_navx(config, nav_system=0x01)
+        # Parse the payload back to verify fields preserved
+        parsed = parse_cfg_navx(payload)
+        assert parsed.dyn_model == 3
+        assert parsed.fix_mode == 2
+        assert parsed.min_elev == 10
+        assert parsed.nav_system == 0x01  # Changed
+        assert parsed.fixed_alt == 100.0
+
+    def test_none_nav_system_keeps_existing(self) -> None:
+        """Test that nav_system=None keeps existing value."""
+        config = NavEngineConfig(
+            mask=0xFFFF, dyn_model=0, fix_mode=3, min_svs=4, max_svs=12,
+            min_cno=6, ini_fix_3d=1, min_elev=5, dr_limit=60,
+            nav_system=0x05, wn_rollover=2000, fixed_alt=0.0, fixed_alt_var=0.0,
+            p_dop=25.0, t_dop=25.0, p_acc=100.0, t_acc=100.0, static_hold_th=0.0
+        )
+        payload = build_cfg_navx(config, nav_system=None)
+        assert payload[13] == 0x05
+
+    def test_payload_structure(self) -> None:
+        """Test payload has correct structure."""
+        config = NavEngineConfig(
+            mask=0xFFFF, dyn_model=0, fix_mode=3, min_svs=4, max_svs=12,
+            min_cno=6, ini_fix_3d=1, min_elev=5, dr_limit=60,
+            nav_system=0x07, wn_rollover=2000, fixed_alt=0.0, fixed_alt_var=0.0,
+            p_dop=25.0, t_dop=25.0, p_acc=100.0, t_acc=100.0, static_hold_th=0.0
+        )
+        payload = build_cfg_navx(config)
+        # Mask should be 0xFFFFFFFF (apply all)
+        mask = struct.unpack("<I", payload[0:4])[0]
+        assert mask == 0xFFFFFFFF
+
+    def test_roundtrip(self) -> None:
+        """Test parse -> build -> parse roundtrip."""
+        original = struct.pack(
+            "<IbBbbBBbbbBHfffffff",
+            0xFFFF, 0, 3, 4, 12, 6, 0, 1, 5, 60, 0x07, 2000,
+            0.0, 0.0, 25.0, 25.0, 100.0, 100.0, 0.0
+        )
+        config = parse_cfg_navx(original)
+        rebuilt = build_cfg_navx(config)
+        reparsed = parse_cfg_navx(rebuilt)
+        assert reparsed.nav_system == config.nav_system
+        assert reparsed.dyn_model == config.dyn_model
+        assert reparsed.fix_mode == config.fix_mode
+
+
+class TestParseGnssArg:
+    def test_single_gps(self) -> None:
+        """Test parsing GPS only."""
+        assert parse_gnss_arg("GPS") == 0x01
+
+    def test_single_bds(self) -> None:
+        """Test parsing BDS only."""
+        assert parse_gnss_arg("BDS") == 0x02
+
+    def test_single_glo(self) -> None:
+        """Test parsing GLO only."""
+        assert parse_gnss_arg("GLO") == 0x04
+
+    def test_multiple_constellations(self) -> None:
+        """Test parsing multiple constellations."""
+        assert parse_gnss_arg("GPS,BDS") == 0x03
+        assert parse_gnss_arg("GPS,GLO") == 0x05
+        assert parse_gnss_arg("BDS,GLO") == 0x06
+        assert parse_gnss_arg("GPS,BDS,GLO") == 0x07
+
+    def test_case_insensitive(self) -> None:
+        """Test case insensitivity."""
+        assert parse_gnss_arg("gps") == 0x01
+        assert parse_gnss_arg("Gps,bds") == 0x03
+
+    def test_glonass_aliases(self) -> None:
+        """Test GLO, GLN, GLONASS all map to bit 2."""
+        assert parse_gnss_arg("GLO") == 0x04
+        assert parse_gnss_arg("GLN") == 0x04
+        assert parse_gnss_arg("GLONASS") == 0x04
+
+    def test_whitespace_handling(self) -> None:
+        """Test whitespace is trimmed."""
+        assert parse_gnss_arg(" GPS , BDS ") == 0x03
+
+    def test_empty_items_ignored(self) -> None:
+        """Test empty items in comma list are ignored."""
+        assert parse_gnss_arg("GPS,,BDS,") == 0x03
+
+    def test_invalid_constellation(self) -> None:
+        """Test invalid constellation raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown constellation"):
+            parse_gnss_arg("INVALID")
+
+    def test_unsupported_galileo(self) -> None:
+        """Test Galileo raises specific unsupported error."""
+        with pytest.raises(ValueError, match="Unsupported constellation.*GAL"):
+            parse_gnss_arg("GAL")
+
+    def test_unsupported_qzss(self) -> None:
+        """Test QZSS raises specific unsupported error."""
+        with pytest.raises(ValueError, match="Unsupported constellation.*QZSS"):
+            parse_gnss_arg("QZSS")
+
+    def test_empty_string(self) -> None:
+        """Test empty string returns 0."""
+        assert parse_gnss_arg("") == 0
+
+
 class TestConfigChangesMarkMsg:
     def test_initial_mask_zero(self) -> None:
         """Test ConfigChanges starts with zero mask."""
@@ -548,11 +689,11 @@ class TestConfigChangesMarkMsg:
         changes.mark_msg()
         assert changes.mask == CFG_MASK_MSG
 
-    def test_mark_msg_and_rate(self) -> None:
-        """Test mark_msg and mark_rate can both be set."""
+    def test_mark_msg_and_nav(self) -> None:
+        """Test mark_msg and mark_nav can both be set."""
         changes = ConfigChanges()
-        changes.mark_rate()
+        changes.mark_nav()
         changes.mark_msg()
         assert changes.mask & CFG_MASK_MSG != 0
-        assert changes.mask & CFG_MASK_RATE != 0
-        assert changes.mask == (CFG_MASK_MSG | CFG_MASK_RATE)
+        assert changes.mask & CFG_MASK_NAV != 0
+        assert changes.mask == (CFG_MASK_MSG | CFG_MASK_NAV)

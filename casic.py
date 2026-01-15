@@ -89,7 +89,7 @@ NMEA_MESSAGES: list[tuple[str, MsgID]] = [
 CFG_MASK_PORT = 0x0001  # B0: CFG-PRT
 CFG_MASK_MSG = 0x0002  # B1: CFG-MSG
 CFG_MASK_INF = 0x0004  # B2: CFG-INF
-CFG_MASK_RATE = 0x0008  # B3: CFG-RATE, CFG-TMODE
+CFG_MASK_NAV = 0x0008  # B3: CFG-RATE, CFG-TMODE, CFG-NAVX (navigation config)
 CFG_MASK_TP = 0x0010  # B4: CFG-TP
 CFG_MASK_GROUP = 0x0020  # B5: CFG-GROUP
 CFG_MASK_ALL = 0xFFFF  # All sections
@@ -798,3 +798,43 @@ def build_cfg_rst(nav_bbr_mask: int, reset_mode: int, start_mode: int) -> bytes:
         start_mode: 0=Hot, 1=Warm, 2=Cold, 3=Factory
     """
     return struct.pack("<HBB", nav_bbr_mask, reset_mode, start_mode)
+
+
+def build_cfg_navx(config: NavEngineConfig, nav_system: int | None = None) -> bytes:
+    """Build CFG-NAVX payload (44 bytes) from existing config.
+
+    Uses read-modify-write approach: takes current config and optionally
+    overrides nav_system field.
+
+    Args:
+        config: Current NavEngineConfig from parse_cfg_navx()
+        nav_system: New constellation mask, or None to keep existing
+            (B0=GPS, B1=BDS, B2=GLONASS)
+
+    Returns:
+        44-byte payload ready for CFG-NAVX SET command
+    """
+    system = nav_system if nav_system is not None else config.nav_system
+
+    return struct.pack(
+        "<IbBbbBBbbbBHfffffff",
+        0xFFFFFFFF,  # mask: apply all fields
+        config.dyn_model,
+        config.fix_mode,
+        config.min_svs,
+        config.max_svs,
+        config.min_cno,
+        0,  # res1
+        config.ini_fix_3d,
+        config.min_elev,
+        config.dr_limit,
+        system,
+        config.wn_rollover,
+        config.fixed_alt,
+        config.fixed_alt_var,
+        config.p_dop,
+        config.t_dop,
+        config.p_acc,
+        config.t_acc,
+        config.static_hold_th,
+    )
