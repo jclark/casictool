@@ -170,7 +170,6 @@ def validate_args(args: argparse.Namespace) -> str | None:
 
 VALID_GNSS = {"GPS", "BDS", "GLO", "GLN", "GLONASS"}
 UNSUPPORTED_GNSS = {"GAL", "GALILEO", "QZSS", "NAVIC", "SBAS"}
-VALID_NMEA_MESSAGES = {"GGA", "GLL", "GSA", "GSV", "RMC", "VTG", "ZDA"}
 VALID_TIME_GNSS = {"GPS", "BDS", "GLO", "GLONASS"}
 
 
@@ -210,24 +209,26 @@ def parse_gnss_arg(gnss_str: str) -> set[GNSS]:
     return result
 
 
-def parse_nmea_out(nmea_str: str) -> dict[NMEA, int]:
-    """Parse --nmea-out argument into NMEARates dict.
+def parse_nmea_out(nmea_str: str) -> list[int]:
+    """Parse --nmea-out argument into NMEARates list.
 
     Args:
         nmea_str: Comma-separated message list (e.g., "GGA,RMC,ZDA")
 
     Returns:
-        Dict mapping NMEA enums to rate (1 = enabled)
+        List of rates indexed by NMEA.value (1 = enabled, 0 = disabled)
     """
-    result: dict[NMEA, int] = {}
+    result = [0] * len(NMEA)
 
     for item in nmea_str.split(","):
         item = item.strip().upper()
         if not item:
             continue
-        if item not in VALID_NMEA_MESSAGES:
+        try:
+            nmea = NMEA[item]
+            result[nmea.value] = 1
+        except KeyError:
             raise ValueError(f"Unknown NMEA message: {item}")
-        result[NMEA(item)] = 1
 
     return result
 

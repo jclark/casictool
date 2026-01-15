@@ -58,15 +58,15 @@ class GNSS(Enum):
 
 
 class NMEA(Enum):
-    """NMEA sentence types."""
+    """NMEA sentence types. Values are indices into NMEARates list."""
 
-    GGA = "GGA"
-    GLL = "GLL"
-    GSA = "GSA"
-    GSV = "GSV"
-    RMC = "RMC"
-    VTG = "VTG"
-    ZDA = "ZDA"
+    GGA = 0
+    GLL = 1
+    GSA = 2
+    GSV = 3
+    RMC = 4
+    VTG = 5
+    ZDA = 6
 
 
 class SaveMode(Enum):
@@ -126,8 +126,19 @@ class FixedMode:
 # Union of time modes (use isinstance() or match/case to check which)
 TimeMode = MobileMode | SurveyMode | FixedMode
 
-# NMEA output rates: maps sentence type to rate (0 = disabled, 1 = every fix)
-NMEARates = dict[NMEA, int]
+# NMEA output rates: list indexed by NMEA.value (0 = disabled, 1 = every fix)
+NMEARates = list[int]  # Always length len(NMEA)
+
+
+def nmea_rates(**kwargs: int) -> NMEARates:
+    """Create NMEARates list with specified messages enabled, rest disabled.
+
+    Example: nmea_rates(GGA=1, RMC=1) -> [1, 0, 0, 0, 1, 0, 0]
+    """
+    rates = [0] * len(NMEA)
+    for name, rate in kwargs.items():
+        rates[NMEA[name].value] = rate
+    return rates
 
 
 # ============================================================================
@@ -398,9 +409,6 @@ def parse_ecef_coords(coord_str: str) -> tuple[float, float, float]:
     return (float(parts[0].strip()), float(parts[1].strip()), float(parts[2].strip()))
 
 
-VALID_NMEA_MESSAGES = {"GGA", "GLL", "GSA", "GSV", "RMC", "VTG", "ZDA"}
-
-
 # ============================================================================
 # PPS Command Functions
 # ============================================================================
@@ -574,14 +582,13 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
     # Query NMEA message rates
     rates = query_nmea_rates(conn)
     if rates.rates:
-        nmea_out: NMEARates = {}
+        nmea_out: NMEARates = [0] * len(NMEA)
         for name, rate in rates.rates.items():
             try:
-                nmea_out[NMEA(name)] = rate
-            except ValueError:
+                nmea_out[NMEA[name].value] = rate
+            except KeyError:
                 pass  # Skip unknown NMEA types
-        if nmea_out:
-            props["nmea_out"] = nmea_out
+        props["nmea_out"] = nmea_out
 
     return props
 
@@ -697,21 +704,19 @@ def execute_job(
 
         # Apply NMEA output configuration
         if "nmea_out" in job.props:
-            nmea_rates = job.props["nmea_out"]
-            # Build set of messages to enable
-            enable_set = {nmea.value for nmea in nmea_rates if nmea_rates[nmea] > 0}
-            # Enable specified messages, disable all others
-            for msg_name in VALID_NMEA_MESSAGES:
-                target_rate = 1 if msg_name in enable_set else 0
-                if set_nmea_message_rate(conn, msg_name, target_rate):
+            nmea_out = job.props["nmea_out"]
+            # Set rate for each NMEA message type
+            for nmea in NMEA:
+                target_rate = nmea_out[nmea.value]
+                if set_nmea_message_rate(conn, nmea.name, target_rate):
                     if target_rate > 0:
-                        result.operations.append(f"Enabled {msg_name}")
+                        result.operations.append(f"Enabled {nmea.name}")
                     else:
-                        result.operations.append(f"Disabled {msg_name}")
+                        result.operations.append(f"Disabled {nmea.name}")
                     changes.mark_msg()
                 else:
                     result.success = False
-                    result.error = f"Failed to {'enable' if target_rate > 0 else 'disable'} {msg_name}"
+                    result.error = f"Failed to {'enable' if target_rate > 0 else 'disable'} {nmea.name}"
                     return result
 
     # Execute NVM save operations (after configuration changes)

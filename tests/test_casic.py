@@ -56,7 +56,7 @@ from casic import (
     parse_cfg_tp,
     parse_msg,
 )
-from casictool import GNSS, NMEA, parse_gnss_arg, parse_nmea_out
+from casictool import GNSS, parse_gnss_arg, parse_nmea_out
 from job import ConfigChanges
 
 
@@ -503,22 +503,24 @@ class TestParseNmeaOut:
     def test_basic(self) -> None:
         """Test parsing messages to enable."""
         enable = parse_nmea_out("GGA,RMC,ZDA")
-        assert enable == {NMEA.GGA: 1, NMEA.RMC: 1, NMEA.ZDA: 1}
+        # GGA=0, RMC=4, ZDA=6
+        assert enable == [1, 0, 0, 0, 1, 0, 1]
 
     def test_case_insensitive(self) -> None:
         """Test case insensitivity."""
         enable = parse_nmea_out("gga,Rmc,zda")
-        assert enable == {NMEA.GGA: 1, NMEA.RMC: 1, NMEA.ZDA: 1}
+        assert enable == [1, 0, 0, 0, 1, 0, 1]
 
     def test_whitespace_handling(self) -> None:
         """Test whitespace is trimmed."""
         enable = parse_nmea_out(" GGA , RMC , ZDA ")
-        assert enable == {NMEA.GGA: 1, NMEA.RMC: 1, NMEA.ZDA: 1}
+        assert enable == [1, 0, 0, 0, 1, 0, 1]
 
     def test_empty_items_ignored(self) -> None:
         """Test empty items in comma list are ignored."""
         enable = parse_nmea_out("GGA,,RMC,")
-        assert enable == {NMEA.GGA: 1, NMEA.RMC: 1}
+        # GGA=0, RMC=4
+        assert enable == [1, 0, 0, 0, 1, 0, 0]
 
     def test_invalid_message(self) -> None:
         """Test invalid message name raises ValueError."""
@@ -528,15 +530,7 @@ class TestParseNmeaOut:
     def test_all_valid_messages(self) -> None:
         """Test all valid message names are accepted."""
         enable = parse_nmea_out("GGA,GLL,GSA,GSV,RMC,VTG,ZDA")
-        assert enable == {
-            NMEA.GGA: 1,
-            NMEA.GLL: 1,
-            NMEA.GSA: 1,
-            NMEA.GSV: 1,
-            NMEA.RMC: 1,
-            NMEA.VTG: 1,
-            NMEA.ZDA: 1,
-        }
+        assert enable == [1, 1, 1, 1, 1, 1, 1]
 
 
 class TestBuildCfgNavx:

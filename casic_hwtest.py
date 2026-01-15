@@ -13,10 +13,11 @@ from dataclasses import dataclass
 from casic import CasicConnection
 from job import (
     GNSS,
+    NMEA,
     ConfigJob,
     ConfigProps,
-    check_config,
     execute_job,
+    nmea_rates,
     query_config_props,
 )
 
@@ -54,7 +55,11 @@ def verify(conn: CasicConnection, props: ConfigProps) -> TestResult:
     if not result.success:
         return Fail({"error": {"expected": "success", "actual": result.error}})
     actual = query_config_props(conn)
-    mismatches = check_config(props, actual)
+    mismatches: dict[str, dict[str, object]] = {}
+    for key, expected_val in props.items():
+        actual_val = actual.get(key)
+        if actual_val != expected_val:
+            mismatches[key] = {"expected": expected_val, "actual": actual_val}
     if mismatches:
         return Fail(mismatches)
     return Pass()
@@ -72,8 +77,9 @@ def format_props(props: ConfigProps) -> str:
         parts.append(f"time_pulse: {props['time_pulse']}")
     if "nmea_out" in props:
         nmea_out = props["nmea_out"]
-        msgs = sorted(f"{k.value}:{v}" for k, v in nmea_out.items())
-        parts.append(f"nmea_out: {{{', '.join(msgs)}}}")
+        # Show only enabled messages
+        enabled = [nmea.name for nmea in NMEA if nmea_out[nmea.value] > 0]
+        parts.append(f"nmea_out: {{{', '.join(enabled)}}}")
     return "{" + ", ".join(parts) + "}"
 
 
@@ -137,6 +143,17 @@ GNSS_TESTS: list[ConfigProps] = [
     {"gnss": {GNSS.GPS, GNSS.BDS, GNSS.GLO}},
 ]
 
+NMEA_TESTS: list[ConfigProps] = [
+    # Single message
+    {"nmea_out": nmea_rates(GGA=1)},
+    # Multiple messages
+    {"nmea_out": nmea_rates(GGA=1, RMC=1, GSV=1)},
+    # Different single message
+    {"nmea_out": nmea_rates(RMC=1)},
+    # All messages
+    {"nmea_out": nmea_rates(GGA=1, GLL=1, GSA=1, GSV=1, RMC=1, VTG=1, ZDA=1)},
+]
+
 
 # ============================================================================
 # CLI
@@ -195,7 +212,9 @@ Modifiers:
         if run_gnss:
             results["GNSS"] = run_tests(conn, "GNSS Configuration", GNSS_TESTS)
 
-        # TODO: Add NMEA tests
+        if run_nmea:
+            results["NMEA"] = run_tests(conn, "NMEA Output", NMEA_TESTS)
+
         # TODO: Add time-mode tests
         # TODO: Add PPS tests
         # TODO: Add persist tests
