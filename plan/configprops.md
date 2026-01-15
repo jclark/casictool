@@ -13,9 +13,8 @@ Refactor configuration handling so verification is trivial: compare "what we ask
 
 **ConfigJob** (dataclass) = complete job specification
 - `props: ConfigProps` - properties to set
-- `save: bool` - save to NVM after changes
-- `reload: bool` - reload config from NVM
-- `factory_reset: bool` - factory reset
+- `save: SaveMode` - what to save to NVM (NONE, CHANGES, ALL)
+- `reset: ResetMode` - what reset to perform (NONE, RELOAD, COLD, FACTORY)
 - `show_config: bool` - query and return current config
 
 Both live in `job.py` - the middle layer between CLI and protocol.
@@ -28,35 +27,68 @@ Group related settings into dataclasses (like Go's structs):
 
 ```python
 from dataclasses import dataclass
+from enum import Enum
 from typing import Literal
+
+class GNSS(Enum):
+    """GNSS constellation identifiers."""
+    GPS = "GPS"
+    GAL = "GAL"
+    BDS = "BDS"
+    GLO = "GLO"
+
+class NMEA(Enum):
+    """NMEA sentence types."""
+    GGA = "GGA"
+    GLL = "GLL"
+    GSA = "GSA"
+    GSV = "GSV"
+    RMC = "RMC"
+    VTG = "VTG"
+    ZDA = "ZDA"
+
+class SaveMode(Enum):
+    """What to save to NVM."""
+    NONE = "none"           # don't save
+    CHANGES = "changes"     # save only what was changed by this job
+    ALL = "all"             # save all current configuration
+
+class ResetMode(Enum):
+    """What kind of reset to perform."""
+    NONE = "none"           # no reset
+    RELOAD = "reload"       # reload config from NVM (discard unsaved changes)
+    COLD = "cold"           # reload from NVM + cold start (clear nav data)
+    FACTORY = "factory"     # restore NVM to factory defaults + cold start
 
 @dataclass(frozen=True)
 class TimePulse:
     """PPS/time pulse configuration."""
+    period: float             # pulse period in seconds (1.0 = 1Hz PPS)
     width: float              # pulse width in seconds
-    time_gnss: str            # time source: 'GPS', 'BDS', 'GLO'
+    time_gnss: GNSS           # time source for PPS alignment
 
 @dataclass(frozen=True)
-class Survey:
-    """Survey-in mode parameters."""
+class MobileMode:
+    """Mobile/auto mode - antenna position may change."""
+    pass
+
+@dataclass(frozen=True)
+class SurveyMode:
+    """Survey-in mode - determine fixed position by surveying."""
     min_dur: int              # minimum duration in seconds
     acc: float                # target accuracy in meters
 
 @dataclass(frozen=True)
-class FixedPosition:
-    """Fixed position mode parameters."""
+class FixedMode:
+    """Fixed position mode - use known antenna position."""
     ecef: tuple[float, float, float]  # ECEF coordinates in meters
     acc: float                         # position accuracy in meters
 
-@dataclass(frozen=True)
-class NMEARates:
-    """NMEA message output rates (0 = disabled)."""
-    gga: int = 0
-    rmc: int = 0
-    gsv: int = 0
-    gsa: int = 0
-    vtg: int = 0
-    zda: int = 0
+# Union of time modes (use isinstance() or match/case to check which)
+TimeMode = MobileMode | SurveyMode | FixedMode
+
+# NMEA output rates: maps sentence type to rate (0 = disabled, 1 = every fix)
+NMEARates = dict[NMEA, int]
 ```
 
 ### ConfigProps (TypedDict)
@@ -65,19 +97,10 @@ class NMEARates:
 from typing import TypedDict, Literal
 
 class ConfigProps(TypedDict, total=False):
-    # GNSS constellation selection - high level, not a bitmask
-    gnss: set[str]                    # e.g., {'GPS', 'BDS', 'GLO'}
-
-    # Timing mode - one of these will be set
-    mode: Literal['mobile', 'survey', 'fixed']
-    survey: Survey                    # present when mode='survey'
-    fixed_pos: FixedPosition          # present when mode='fixed'
-
-    # Time pulse / PPS
-    time_pulse: TimePulse
-
-    # NMEA output
-    nmea: NMEARates
+    gnss: set[GNSS]           # enabled constellations
+    time_mode: TimeMode       # mobile, survey, or fixed position mode
+    time_pulse: TimePulse     # PPS configuration
+    nmea_out: NMEARates       # NMEA message output rates
 ```
 
 ### ConfigJob (dataclass)
@@ -86,11 +109,10 @@ class ConfigProps(TypedDict, total=False):
 @dataclass
 class ConfigJob:
     """Complete specification of what casictool should do."""
-    props: ConfigProps | None = None   # Properties to set
-    save: bool = False                  # Save to NVM after changes
-    reload: bool = False                # Reload config from NVM
-    factory_reset: bool = False         # Factory reset
-    show_config: bool = False           # Query and return current config
+    props: ConfigProps | None = None       # Properties to set
+    save: SaveMode = SaveMode.NONE         # What to save to NVM
+    reset: ResetMode = ResetMode.NONE      # What kind of reset to perform
+    show_config: bool = False              # Query and return current config
 ```
 
 ### Usage
@@ -98,8 +120,8 @@ class ConfigJob:
 ```python
 # Build a job
 job = ConfigJob(
-    props={'gnss': {'GPS', 'BDS'}, 'time_pulse': TimePulse(width=0.0001, time_gnss='GPS')},
-    save=True,
+    props={'gnss': {GNSS.GPS, GNSS.BDS}, 'time_pulse': TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GPS)},
+    save=SaveMode.CHANGES,
     show_config=True,
 )
 
@@ -123,26 +145,30 @@ mismatches = check_config(job.props, result)
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `gnss` | `set[str]` | Enabled constellations: `{'GPS', 'BDS', 'GLO'}` |
-| `mode` | `Literal` | `'mobile'`, `'survey'`, or `'fixed'` |
-| `survey` | `Survey` | Survey parameters (when mode='survey') |
-| `fixed_pos` | `FixedPosition` | Fixed position (when mode='fixed') |
+| `gnss` | `set[GNSS]` | Enabled constellations |
+| `time_mode` | `TimeMode` | MobileMode, SurveyMode, or FixedMode |
 | `time_pulse` | `TimePulse` | PPS configuration |
-| `nmea` | `NMEARates` | NMEA message rates |
+| `nmea_out` | `dict[NMEA, int]` | NMEA message rates |
 
 ### Operations (part of ConfigJob, not ConfigProps)
 
-NVM operations are flags on ConfigJob, not properties:
+NVM operations use enums on ConfigJob, not properties:
 
 ```python
-# Set props and save
-job = ConfigJob(props={'gnss': {'GPS'}}, save=True)
+# Set props and save just what changed
+job = ConfigJob(props={'gnss': {GNSS.GPS}}, save=SaveMode.CHANGES)
 
-# Just reload from NVM
-job = ConfigJob(reload=True)
+# Set props and save all config
+job = ConfigJob(props={'gnss': {GNSS.GPS}}, save=SaveMode.ALL)
 
-# Factory reset
-job = ConfigJob(factory_reset=True)
+# Reload config from NVM (discard unsaved changes)
+job = ConfigJob(reset=ResetMode.RELOAD)
+
+# Cold start (reload from NVM + clear nav data)
+job = ConfigJob(reset=ResetMode.COLD)
+
+# Factory reset (restore NVM defaults + cold start)
+job = ConfigJob(reset=ResetMode.FACTORY)
 
 # Just query current config
 job = ConfigJob(show_config=True)
@@ -151,13 +177,17 @@ job = ConfigJob(show_config=True)
 ### CLI Mapping
 
 ```
---gnss GPS,BDS              → {'gnss': {'GPS', 'BDS'}}
---pps 0.0001 --time-gnss GPS → {'time_pulse': TimePulse(width=0.0001, time_gnss='GPS')}
---survey 3600 10            → {'mode': 'survey', 'survey': Survey(min_dur=3600, acc=10.0)}
---fixed-pos-ecef X,Y,Z 10   → {'mode': 'fixed', 'fixed_pos': FixedPosition(ecef=(X,Y,Z), acc=10.0)}
---mobile                    → {'mode': 'mobile'}
---nmea-out GGA,RMC          → {'nmea': NMEARates(gga=1, rmc=1)}
---save                      → save=True (operation, not property)
+--gnss GPS,BDS              → {'gnss': {GNSS.GPS, GNSS.BDS}}
+--pps 0.0001 --time-gnss GPS → {'time_pulse': TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GPS)}
+--survey 3600 10            → {'time_mode': SurveyMode(min_dur=3600, acc=10.0)}
+--fixed-pos-ecef X,Y,Z 10   → {'time_mode': FixedMode(ecef=(X,Y,Z), acc=10.0)}
+--mobile                    → {'time_mode': MobileMode()}
+--nmea-out GGA,RMC          → {'nmea_out': {NMEA.GGA: 1, NMEA.RMC: 1}}
+--save                      → save=SaveMode.CHANGES
+--save-all                  → save=SaveMode.ALL
+--reload                    → reset=ResetMode.RELOAD
+--reset                     → reset=ResetMode.COLD
+--factory-reset             → reset=ResetMode.FACTORY
 ```
 
 ### Hardware Test Integration
@@ -175,10 +205,10 @@ def verify(conn, props: ConfigProps) -> TestResult:
     return Pass()
 
 # Tests are one-liners
-verify(conn, {'gnss': {'GPS'}})
-verify(conn, {'gnss': {'GPS', 'BDS'}})
-verify(conn, {'time_pulse': TimePulse(width=0.0001, time_gnss='GPS')})
-verify(conn, {'mode': 'survey', 'survey': Survey(min_dur=3600, acc=10.0)})
+verify(conn, {'gnss': {GNSS.GPS}})
+verify(conn, {'gnss': {GNSS.GPS, GNSS.BDS}})
+verify(conn, {'time_pulse': TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GPS)})
+verify(conn, {'time_mode': SurveyMode(min_dur=3600, acc=10.0)})
 ```
 
 ## Changes Required
@@ -189,7 +219,10 @@ verify(conn, {'mode': 'survey', 'survey': Survey(min_dur=3600, acc=10.0)})
 
 ### job.py (refactor)
 - Add `ConfigProps` TypedDict
-- Add property value dataclasses: `TimePulse`, `Survey`, `FixedPosition`, `NMEARates`
+- Add enums: `GNSS`, `NMEA`, `SaveMode`, `ResetMode`
+- Add property value dataclasses: `TimePulse`, `MobileMode`, `SurveyMode`, `FixedMode`
+- Add type alias: `TimeMode = MobileMode | SurveyMode | FixedMode`
+- Add type alias: `NMEARates = dict[NMEA, int]`
 - Refactor `ConfigJob` to use `props: ConfigProps` instead of individual fields
 - `execute_job(conn, job: ConfigJob) -> ConfigProps` - run job, return current config
 - `check_config(target, actual) -> dict` - find mismatches
