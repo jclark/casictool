@@ -157,49 +157,29 @@ Navigation results: Position, velocity, time, precision, heading, DOP, satellite
 **Remark \[1\]: Positioning Flag**
 
 | Value | Description |
-
 | :--- | :--- |
-
 | 0 | Positioning Invalid |
-
 | 1 | External Input Position |
-
 | 2 | Roughly Estimated Position |
-
 | 3 | Maintaining Last Position |
-
 | 4 | Dead Reckoning |
-
 | 5 | Quick Mode Positioning |
-
 | 6 | 2D Positioning |
-
 | 7 | 3D Positioning |
-
 | 8 | GNSS+DR Integrated Navigation |
 
 **Remark \[2\]: Velocity Flag**
 
 | Value | Description |
-
 | :--- | :--- |
-
 | 0 | Velocity Invalid |
-
 | 1 | External Input Velocity |
-
 | 2 | Roughly Estimated Velocity |
-
 | 3 | Maintaining Last Velocity |
-
 | 4 | Velocity Reckoning |
-
 | 5 | Quick Mode Velocity |
-
 | 6 | 2D Velocity |
-
 | 7 | 3D Velocity |
-
 | 8 | GNSS+DR Integrated Navigation Velocity |
 
 **Remark \[3\]: Message Validity Flag**
@@ -207,15 +187,10 @@ Navigation results: Position, velocity, time, precision, heading, DOP, satellite
 Upper 4 bits indicate Almanac message validity; Lower 4 bits indicate Ephemeris message validity.
 
 | Value | Description |
-
 | :--- | :--- |
-
 | 0 | Missing |
-
 | 1 | Unhealthy |
-
 | 2 | Expired |
-
 | 3 | Valid |
 
 **Remark \[4\]: Message Validity Flag**
@@ -223,15 +198,10 @@ Upper 4 bits indicate Almanac message validity; Lower 4 bits indicate Ephemeris 
 Upper 4 bits indicate UTC parameter validity; Lower 4 bits indicate Ionosphere parameter validity.
 
 | Value | Description |
-
 | :--- | :--- |
-
 | 0 | Missing |
-
 | 1 | Unhealthy |
-
 | 2 | Expired |
-
 | 3 | Valid |
 
 20
@@ -295,25 +265,17 @@ Upper 4 bits indicate UTC parameter validity; Lower 4 bits indicate Ionosphere p
 **Remark \[3\]: Time Source**
 
 | Value | Description |
-
 | :--- | :--- |
-
 | 0 | GPS Timing (Time of week and week number obtained from GPS satellites) |
-
 | 1 | BDS |
-
 | 2 | GLONASS |
 
 **Remark \[4\]: Multimode Reception Mask**
 
 | Bit | Description |
-
 | :--- | :--- |
-
 | B0 | 1 \= GPS satellites used for positioning |
-
 | B1 | 1 \= BDS satellites used for positioning |
-
 | B2 | 1 \= GLONASS satellites used for positioning |
 
 24
@@ -383,39 +345,26 @@ Upper 4 bits indicate UTC parameter validity; Lower 4 bits indicate Ionosphere p
 **Remark \[1\]: Time Valid Flag**
 
 | Bit | Description |
-
 | :--- | :--- |
-
 | B0 | UTC Time of Week valid (0=Invalid, 1=Valid) |
-
 | B1 | UTC Week Number valid (0=Invalid, 1=Valid) |
-
 | B2 | UTC Leap Second correction valid (0=Invalid, 1=Valid) |
 
 **Remark \[2\]: Timing System Flag**
 
 | Value | Description |
-
 | :--- | :--- |
-
 | 0 | GPS Timing |
-
 | 1 | BDS Timing |
-
 | 2 | GLONASS Timing |
 
 **Remark \[3\]: Date Valid Flag**
 
 | Value | Description |
-
 | :--- | :--- |
-
 | 0 | Date Invalid |
-
 | 1 | External Input Date |
-
 | 2 | Date from Satellite |
-
 | 3 | Date from multiple satellites (reliable) |
 
 #### **2.7.6 NAV-CLOCK (0x01 0x11)**
@@ -472,49 +421,31 @@ Upper 4 bits indicate UTC parameter validity; Lower 4 bits indicate Ionosphere p
 **Remark \[1\]: System Type**
 
 | Value | Description |
-
 | :--- | :--- |
-
 | 0 | GPS |
-
 | 1 | BDS |
-
 | 2 | GLONASS |
 
 **Remark \[2\]: Satellite Status**
 
 | Bit | Description |
-
 | :--- | :--- |
-
 | B0 | 1 \= Satellite used in solution |
-
 | B1-B3 | Reserved |
-
 | B4 | 1 \= Satellite prediction info invalid |
-
 | B5 | Reserved |
-
 | B7:B6 | 00=Reserved, 01=Prediction based on Almanac, 10=Reserved, 11=Prediction based on Ephemeris |
 
 **Remark \[3\]: Signal Measurement Quality**
 
 | Bit | Description |
-
 | :--- | :--- |
-
 | BIT0 | 1 \= Pseudorange measurement prMes valid |
-
 | BIT1 | 1 \= Carrier phase measurement cpMes valid |
-
 | BIT2 | 1 \= Half-cycle ambiguity valid (Inverse PI correction valid) |
-
 | BIT3 | 1 \= Half-cycle ambiguity subtracted from carrier phase |
-
 | BIT4 | Reserved |
-
 | BIT5 | 1 \= Carrier frequency valid |
-
 | BIT6-7 | Reserved |
 
 29
@@ -579,25 +510,17 @@ Structure and Payload identical to NAV-GPSINFO, with ID 0x01 0x2231.
 **Remark \[1\]: Reference Time**
 
 | Bit | Description |
-
 | :--- | :--- |
-
 | B3:B0 | 0=GPS, 1=BDS, 2=GLN |
-
 | B7:B4 | 0=Base is UTC, 1=Base is GNSS |
 
 **Remark \[2\]: UTC Parameter Valid Flag**
 
 | Value | Description |
-
 | :--- | :--- |
-
 | 0 | Missing |
-
 | 1 | Reserved |
-
 | 2 | Expired |
-
 | 3 | Valid |
 
 ### **2.9 RXM (0x03)**
@@ -647,11 +570,8 @@ Difference between GPS and UTC. Validity indicated in recStat.
 **Remark \[3\]: recStat**
 
 | Bit | Description |
-
 | :--- | :--- |
-
 | BIT0 | 1 \= leaps valid |
-
 | BIT1 | 1 \= Clock reset occurred (integer ms jump) |
 
 **Remark \[4\]: cpMes**
@@ -661,15 +581,10 @@ Carrier phase initialized with approximate integer ambiguity to match pseudorang
 **Remark \[5\]: trkStat**
 
 | Bit | Description |
-
 | :--- | :--- |
-
 | BIT0 | 1 \= prMes valid |
-
 | BIT1 | 1 \= cpMes valid |
-
 | BIT2 | 1 \= Half-cycle ambiguity valid |
-
 | BIT3 | 1 \= Half-cycle ambiguity subtracted |
 
 #### **2.9.2 RXM-SVPOS (0x03 0x11)**
@@ -748,13 +663,9 @@ Carrier phase initialized with approximate integer ambiguity to match pseudorang
 **Payload Content**
 
 | Offset | Type | Name | Description |
-
 | :--- | :--- | :--- | :--- |
-
 | 0 | U1 | clsID | Class ID of NACK'd message |
-
 | 1 | U1 | msgID | Msg ID of NACK'd message |
-
 | 2 | U2 | res | Reserved |
 
 #### **2.10.2 ACK-ACK (0x05 0x01)**
@@ -768,13 +679,9 @@ Carrier phase initialized with approximate integer ambiguity to match pseudorang
 **Payload Content**
 
 | Offset | Type | Name | Description |
-
 | :--- | :--- | :--- | :--- |
-
 | 0 | U1 | clsID | Class ID of ACK'd message |
-
 | 1 | U1 | msgID | Msg ID of ACK'd message |
-
 | 2 | U2 | res | Reserved |
 
 ### **2.11 CFG (0x06)**
@@ -795,41 +702,25 @@ Carrier phase initialized with approximate integer ambiguity to match pseudorang
 **Remark \[1\]: Protocol Mask**
 
 | Bit | Description |
-
 | :--- | :--- |
-
 | B0 | 1 \= Binary Input |
-
 | B1 | 1 \= Text Input |
-
 | B4 | 1 \= Binary Output |
-
 | B5 | 1 \= Text Output |
 
 **Remark \[2\]: UART Mode**
 
 | Bit | Value | Description |
-
 | :--- | :--- | :--- |
-
 | \[7:6\] | 00 | 5 bits |
-
 | | 01 | 6 bits |
-
 | | 10 | 7 bits |
-
 | | 11 | 8 bits |
-
 | \[11:9\] | 10x | No Parity |
-
 | | 001 | Odd Parity |
-
 | | 000 | Even Parity |
-
 | | 00 | 1 Stop Bit |
-
 | | 01 | 1.5 Stop Bits |
-
 | | 10 | 2 Stop Bits |
 
 #### **2.11.2 CFG-MSG (0x06 0x01)**
@@ -847,15 +738,10 @@ Carrier phase initialized with approximate integer ambiguity to match pseudorang
 **Remark \[1\]: Output Frequency**
 
 | Value | Description |
-
 | :--- | :--- |
-
 | 0 | No Output |
-
 | 1 | Once per fix |
-
 | N | Once per N fixes |
-
 | 0xFFFF | Output immediately once |
 
 Special Case: For RXM\_SENSOR (0x03 0x07), rate sets samples per second.
@@ -879,45 +765,29 @@ Special Case: For RXM\_SENSOR (0x03 0x07), rate sets samples per second.
 **Remark \[1\]: BBR Mask**
 
 | Bit | Description | Bit | Description |
-
 | :--- | :--- | :--- | :--- |
-
 | B0 | Ephemeris | B5 | Clock Drift |
-
 | B1 | Almanac | B6 | Osc Parameters |
-
 | B2 | Health | B7 | UTC Params |
-
 | B3 | Ionosphere | B8 | RTC |
-
 | B4 | Position | B9 | Config |
 
 **Remark \[2\]: Reset Mode**
 
 | Value | Description |
-
 | :--- | :--- |
-
 | 0 | Immediate Hardware Reset |
-
 | 1 | Controlled Software Reset |
-
 | 2 | Controlled Software Reset (GPS Only) |
-
 | 4 | Hardware Reset after Shutdown |
 
 **Remark \[3\]: Start Mode**
 
 | Value | Description |
-
 | :--- | :--- |
-
 | 0 | Hot Start |
-
 | 1 | Warm Start |
-
 | 2 | Cold Start |
-
 | 3 | Factory Start |
 
 #### **2.11.4 CFG-TP (0x06 0x03)**
@@ -966,19 +836,12 @@ Special Case: For RXM\_SENSOR (0x03 0x07), rate sets samples per second.
 **Remark \[1\]: Mask**
 
 | Bit | Description |
-
 | :--- | :--- |
-
 | B0 | Port (CFG-PRT) |
-
 | B1 | Msg (CFG-MSG) |
-
 | B2 | INF (CFG-INF) |
-
 | B3 | Rate (CFG-RATE/TMODE) |
-
 | B4 | TP (CFG-TP) |
-
 | B5 | Group Delay (CFG-GROUP) |
 
 **Remark \[2\]: Mode**
