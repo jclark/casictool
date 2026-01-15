@@ -201,13 +201,19 @@ class ConfigChanges:
 # ============================================================================
 
 
-def probe_receiver(conn: CasicConnection) -> tuple[bool, VersionInfo | None]:
+def probe_receiver(
+    conn: CasicConnection, timeout: float = 5.0
+) -> tuple[bool, VersionInfo | None]:
     """Probe receiver with MON-VER to verify it's a CASIC device.
 
     Returns (is_casic, version_info). A NAK response proves it's CASIC
     even if MON-VER isn't supported.
+
+    Args:
+        conn: CasicConnection to the receiver
+        timeout: How long to wait for response (default 5s for slow baud rates)
     """
-    result = conn.poll(MON_VER.cls, MON_VER.id)
+    result = conn.poll(MON_VER.cls, MON_VER.id, timeout=timeout)
     if result.success:
         return True, parse_mon_ver(result.payload)  # type: ignore[arg-type]
     if result.nak:
@@ -622,15 +628,6 @@ def execute_job(
     """
     result = CommandResult()
     changes = ConfigChanges()
-
-    # Probe receiver first (except for factory/cold reset)
-    if job.reset not in (ResetMode.FACTORY, ResetMode.COLD):
-        is_casic, version = probe_receiver(conn)
-        if not is_casic:
-            result.success = False
-            result.error = "No response from receiver. Not a CASIC device?"
-            return result
-        result.version = version
 
     # Apply properties if specified
     if job.props is not None:

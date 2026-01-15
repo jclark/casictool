@@ -23,6 +23,7 @@ from job import (
     TimePulse,
     execute_job,
     parse_ecef_coords,
+    probe_receiver,
 )
 
 
@@ -398,7 +399,18 @@ def run_casictool(argv: list[str]) -> CommandResult:
         with CasicConnection(
             args.device, baudrate=args.speed, packet_log=args.packet_log
         ) as conn:
-            return execute_job(conn, job)
+            # Probe receiver once (skip for factory/cold reset)
+            if job.reset not in (ResetMode.FACTORY, ResetMode.COLD):
+                is_casic, version = probe_receiver(conn)
+                if not is_casic:
+                    return CommandResult(
+                        success=False, error="No response from receiver. Not a CASIC device?"
+                    )
+            else:
+                version = None
+            result = execute_job(conn, job)
+            result.version = version
+            return result
     except serial.SerialException as e:
         return CommandResult(success=False, error=str(e))
 

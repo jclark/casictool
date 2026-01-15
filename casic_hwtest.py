@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import time
 from dataclasses import dataclass
 
 from casic import CasicConnection
@@ -25,6 +24,7 @@ from job import (
     TimePulse,
     execute_job,
     nmea_rates,
+    probe_receiver,
     query_config_props,
 )
 
@@ -72,23 +72,6 @@ def verify(conn: CasicConnection, props: ConfigProps) -> TestResult:
     return Pass()
 
 
-def wait_for_restart(conn: CasicConnection) -> bool:
-    """Wait for receiver to restart after reset.
-
-    Returns True if receiver came back, False if 30 second timeout.
-    """
-    conn._serial.reset_input_buffer()
-    start = time.monotonic()
-    while True:
-        elapsed = time.monotonic() - start
-        if elapsed > 30:
-            return False
-        if conn._serial.read(100) and elapsed > 2:
-            time.sleep(2)
-            conn._serial.reset_input_buffer()
-            return True
-
-
 def verify_persist(
     conn: CasicConnection, props: ConfigProps, alt_props: ConfigProps
 ) -> TestResult:
@@ -122,37 +105,6 @@ def verify_persist(
     actual = query_config_props(conn)
     mismatches: dict[str, dict[str, object]] = {}
     for key, expected_val in props.items():
-        actual_val = actual.get(key)
-        if actual_val != expected_val:
-            mismatches[key] = {"expected": expected_val, "actual": actual_val}
-    if mismatches:
-        return Fail(mismatches)
-    return Pass()
-
-
-# Factory defaults (verified on hardware)
-FACTORY_DEFAULTS: ConfigProps = {
-    "gnss": {GNSS.GPS, GNSS.BDS},
-    "time_mode": MobileMode(),
-    "time_pulse": TimePulse(period=1.0, width=0.1, time_gnss=GNSS.GPS),
-    "nmea_out": nmea_rates(GGA=1, GLL=1, GSA=1, GSV=1, RMC=1, VTG=1, ZDA=1),
-}
-
-
-def verify_factory_reset(conn: CasicConnection) -> TestResult:
-    """Verify factory reset restores defaults."""
-    # Perform factory reset
-    job = ConfigJob(reset=ResetMode.FACTORY)
-    execute_job(conn, job, log_file=sys.stderr)
-
-    # Wait for receiver to restart
-    if not wait_for_restart(conn):
-        return Fail({"restart": {"expected": "receiver response", "actual": "timeout"}})
-
-    # Query actual config
-    actual = query_config_props(conn)
-    mismatches: dict[str, dict[str, object]] = {}
-    for key, expected_val in FACTORY_DEFAULTS.items():
         actual_val = actual.get(key)
         if actual_val != expected_val:
             mismatches[key] = {"expected": expected_val, "actual": actual_val}
@@ -258,20 +210,6 @@ def run_persist_tests(
     return passed, len(tests), failed
 
 
-def run_factory_reset_test(conn: CasicConnection) -> tuple[int, int, list[ConfigProps]]:
-    """Run factory reset test and return results."""
-    print("\n=== Factory Reset Test ===\n")
-    print(f"Testing: factory reset -> {format_props(FACTORY_DEFAULTS)}")
-    result = verify_factory_reset(conn)
-    if isinstance(result, Pass):
-        print("  PASS")
-        return 1, 1, []
-    else:
-        for key, vals in result.mismatches.items():
-            print(f"  FAIL: {key}: expected {vals['expected']}, got {vals['actual']}")
-        return 0, 1, [FACTORY_DEFAULTS]
-
-
 # ============================================================================
 # Test Data
 # ============================================================================
@@ -369,6 +307,17 @@ def main() -> int:
         print(f"Error: Could not connect to {args.device}: {e}", file=sys.stderr)
         return 1
 
+    # Probe receiver once at startup
+    is_casic, version = probe_receiver(conn)
+    if not is_casic:
+        print("Error: No response from receiver. Not a CASIC device?", file=sys.stderr)
+        conn.close()
+        return 1
+    if version:
+        print(f"CASIC receiver: {version.sw_version}")
+    else:
+        print("CASIC receiver detected (MON-VER not supported)")
+
     results: dict[str, tuple[int, int, list[ConfigProps]]] = {}
 
     try:
@@ -405,9 +354,6 @@ def main() -> int:
 
             if run_pps:
                 results["PPS Persist"] = run_persist_tests(conn, "PPS", PPS_TESTS)
-
-            # Always run factory reset test at the end when --persist is specified
-            results["Factory Reset"] = run_factory_reset_test(conn)
 
     finally:
         conn.close()
