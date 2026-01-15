@@ -2,16 +2,23 @@
 
 ## Goal
 
-Replace the current `ConfigJob` approach with a property-based model that makes verification trivial. Instead of manually checking each field, we compare "what we asked for" with "what we got".
+Refactor configuration handling so verification is trivial: compare "what we asked for" with "what we got".
 
-## Key Insight
+## Key Concepts
 
-In Python, a dict naturally represents "properties that are set":
+**ConfigProps** (TypedDict) = what properties to set/query
 - Presence of a key means the property is set
 - Absence means it wasn't specified
 - Comparison is just dict operations
 
-Use `TypedDict` for type safety while keeping dict semantics.
+**ConfigJob** (dataclass) = complete job specification
+- `props: ConfigProps` - properties to set
+- `save: bool` - save to NVM after changes
+- `reload: bool` - reload config from NVM
+- `factory_reset: bool` - factory reset
+- `show_config: bool` - query and return current config
+
+Both live in `job.py` - the middle layer between CLI and protocol.
 
 ## Design
 
@@ -73,29 +80,43 @@ class ConfigProps(TypedDict, total=False):
     nmea: NMEARates
 ```
 
+### ConfigJob (dataclass)
+
+```python
+@dataclass
+class ConfigJob:
+    """Complete specification of what casictool should do."""
+    props: ConfigProps | None = None   # Properties to set
+    save: bool = False                  # Save to NVM after changes
+    reload: bool = False                # Reload config from NVM
+    factory_reset: bool = False         # Factory reset
+    show_config: bool = False           # Query and return current config
+```
+
 ### Usage
 
 ```python
-# What we want to set
-target: ConfigProps = {
-    'gnss': {'GPS', 'BDS'},
-    'time_pulse': TimePulse(width=0.0001, time_gnss='GPS'),
-}
+# Build a job
+job = ConfigJob(
+    props={'gnss': {'GPS', 'BDS'}, 'time_pulse': TimePulse(width=0.0001, time_gnss='GPS')},
+    save=True,
+    show_config=True,
+)
 
-# Apply to receiver
-apply_config(conn, target)
-
-# Query back
-actual = query_config(conn)
+# Execute it - returns the current config after operations
+result: ConfigProps = execute_job(conn, job)
 
 # Verification - automatic!
-def check_config(target: ConfigProps, actual: ConfigProps) -> ConfigProps:
+def check_config(target: ConfigProps, actual: ConfigProps) -> dict:
     """Return properties that don't match."""
-    mismatches: ConfigProps = {}
+    mismatches = {}
     for key, expected in target.items():
         if actual.get(key) != expected:
             mismatches[key] = {'expected': expected, 'actual': actual.get(key)}
     return mismatches
+
+# Check that what we set is what we got
+mismatches = check_config(job.props, result)
 ```
 
 ### Property Summary
@@ -109,16 +130,22 @@ def check_config(target: ConfigProps, actual: ConfigProps) -> ConfigProps:
 | `time_pulse` | `TimePulse` | PPS configuration |
 | `nmea` | `NMEARates` | NMEA message rates |
 
-### Operations (not properties)
+### Operations (part of ConfigJob, not ConfigProps)
 
-NVM operations are not properties - they're actions:
+NVM operations are flags on ConfigJob, not properties:
 
 ```python
-# Separate from properties
-apply_config(conn, props, save=True)   # Save after applying
-apply_config(conn, props, save='all')  # Save all config
-reload_config(conn)                     # Reload from NVM
-factory_reset(conn)                     # Factory reset
+# Set props and save
+job = ConfigJob(props={'gnss': {'GPS'}}, save=True)
+
+# Just reload from NVM
+job = ConfigJob(reload=True)
+
+# Factory reset
+job = ConfigJob(factory_reset=True)
+
+# Just query current config
+job = ConfigJob(show_config=True)
 ```
 
 ### CLI Mapping
@@ -140,9 +167,9 @@ Tests become trivial:
 ```python
 def verify(conn, props: ConfigProps) -> TestResult:
     """Apply props and verify they took effect."""
-    apply_config(conn, props)
-    actual = query_config(conn)
-    mismatches = check_config(props, actual)
+    job = ConfigJob(props=props, show_config=True)
+    result = execute_job(conn, job)
+    mismatches = check_config(props, result)
     if mismatches:
         return Fail(mismatches)
     return Pass()
@@ -156,25 +183,24 @@ verify(conn, {'mode': 'survey', 'survey': Survey(min_dur=3600, acc=10.0)})
 
 ## Changes Required
 
-### New: configprops.py
-- `ConfigProps` TypedDict
-- Property value dataclasses: `TimePulse`, `Survey`, `FixedPosition`, `NMEARates`
-- `check_config(target, actual) -> ConfigProps` - find mismatches
-
 ### casic.py
 - Keep protocol layer as-is (parsing, building binary payloads)
 - Low-level dataclasses stay (they map to binary format)
 
-### job.py
-- `apply_config(conn, props: ConfigProps, save=False)` - apply properties
-- `query_config(conn) -> ConfigProps` - query current config
+### job.py (refactor)
+- Add `ConfigProps` TypedDict
+- Add property value dataclasses: `TimePulse`, `Survey`, `FixedPosition`, `NMEARates`
+- Refactor `ConfigJob` to use `props: ConfigProps` instead of individual fields
+- `execute_job(conn, job: ConfigJob) -> ConfigProps` - run job, return current config
+- `check_config(target, actual) -> dict` - find mismatches
 - Translation layer: ConfigProps ↔ low-level binary dataclasses
 
 ### casictool.py
-- Build `ConfigProps` from CLI args
-- Call `apply_config()` with props
-- Display result using `query_config()`
+- Build `ConfigJob` from CLI args (props + operation flags)
+- Call `execute_job()`
+- Display result ConfigProps
 
 ### casic_hwtest.py
-- Use `verify(conn, props)` pattern
-- Tests are just ConfigProps dicts
+- Build ConfigJob with props to test
+- Call `execute_job()`
+- Use `check_config()` to verify
