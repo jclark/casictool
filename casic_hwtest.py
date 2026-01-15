@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from dataclasses import dataclass
 
 from casic import CasicConnection
@@ -18,6 +19,8 @@ from job import (
     ConfigProps,
     FixedMode,
     MobileMode,
+    ResetMode,
+    SaveMode,
     SurveyMode,
     TimePulse,
     execute_job,
@@ -61,6 +64,75 @@ def verify(conn: CasicConnection, props: ConfigProps) -> TestResult:
     actual = query_config_props(conn)
     mismatches: dict[str, dict[str, object]] = {}
     for key, expected_val in props.items():
+        actual_val = actual.get(key)
+        if actual_val != expected_val:
+            mismatches[key] = {"expected": expected_val, "actual": actual_val}
+    if mismatches:
+        return Fail(mismatches)
+    return Pass()
+
+
+def verify_persist(
+    conn: CasicConnection, props: ConfigProps, alt_props: ConfigProps
+) -> TestResult:
+    """Verify save/reload round-trip.
+
+    Proves that `props` was saved to NVM:
+    1. Set `props` and save to NVM
+    2. Set `alt_props` (different config) WITHOUT saving - this changes RAM
+    3. Reload from NVM - should restore `props`, not `alt_props`
+    4. If we get `props` back, the save worked; if we get `alt_props`, it didn't
+    """
+    # Set props and save to NVM
+    job = ConfigJob(props=props, save=SaveMode.CHANGES)
+    result = execute_job(conn, job, log_file=sys.stderr)
+    if not result.success:
+        return Fail({"save": {"expected": "success", "actual": result.error}})
+
+    # Set alt_props WITHOUT saving (changes RAM only)
+    job = ConfigJob(props=alt_props)
+    result = execute_job(conn, job, log_file=sys.stderr)
+    if not result.success:
+        return Fail({"alt_config": {"expected": "success", "actual": result.error}})
+
+    # Reload from NVM - should restore props
+    job = ConfigJob(reset=ResetMode.RELOAD)
+    result = execute_job(conn, job, log_file=sys.stderr)
+    if not result.success:
+        return Fail({"reload": {"expected": "success", "actual": result.error}})
+
+    # Verify we got props back, not alt_props
+    actual = query_config_props(conn)
+    mismatches: dict[str, dict[str, object]] = {}
+    for key, expected_val in props.items():
+        actual_val = actual.get(key)
+        if actual_val != expected_val:
+            mismatches[key] = {"expected": expected_val, "actual": actual_val}
+    if mismatches:
+        return Fail(mismatches)
+    return Pass()
+
+
+# Factory defaults (to be verified on hardware)
+FACTORY_DEFAULTS: ConfigProps = {
+    "gnss": {GNSS.GPS, GNSS.BDS, GNSS.GLO},
+    "time_mode": MobileMode(),
+}
+
+
+def verify_factory_reset(conn: CasicConnection) -> TestResult:
+    """Verify factory reset restores defaults."""
+    # Perform factory reset
+    job = ConfigJob(reset=ResetMode.FACTORY)
+    execute_job(conn, job, log_file=sys.stderr)
+
+    # Wait for receiver to restart
+    time.sleep(2)
+
+    # Query actual config
+    actual = query_config_props(conn)
+    mismatches: dict[str, dict[str, object]] = {}
+    for key, expected_val in FACTORY_DEFAULTS.items():
         actual_val = actual.get(key)
         if actual_val != expected_val:
             mismatches[key] = {"expected": expected_val, "actual": actual_val}
@@ -135,6 +207,51 @@ def print_summary(results: dict[str, tuple[int, int, list[ConfigProps]]]) -> int
     return 0 if all_passed else 1
 
 
+def run_persist_tests(
+    conn: CasicConnection,
+    name: str,
+    tests: list[ConfigProps],
+) -> tuple[int, int, list[ConfigProps]]:
+    """Run persist tests for a list of ConfigProps.
+
+    For each test, use the next item in the list as alt_props (wrap around for last).
+    """
+    print(f"\n=== {name} Persist Tests ===\n")
+    passed = 0
+    failed: list[ConfigProps] = []
+
+    for i, props in enumerate(tests):
+        # Use next item as alt_props (wrap around)
+        alt_props = tests[(i + 1) % len(tests)]
+        print(f"Testing persist: {format_props(props)}")
+        print(f"  alt_props: {format_props(alt_props)}")
+        result = verify_persist(conn, props, alt_props)
+        if isinstance(result, Pass):
+            print("  PASS")
+            passed += 1
+        else:
+            for key, vals in result.mismatches.items():
+                print(f"  FAIL: {key}: expected {vals['expected']}, got {vals['actual']}")
+            failed.append(props)
+        print()
+
+    return passed, len(tests), failed
+
+
+def run_factory_reset_test(conn: CasicConnection) -> tuple[int, int, list[ConfigProps]]:
+    """Run factory reset test and return results."""
+    print("\n=== Factory Reset Test ===\n")
+    print(f"Testing: factory reset -> {format_props(FACTORY_DEFAULTS)}")
+    result = verify_factory_reset(conn)
+    if isinstance(result, Pass):
+        print("  PASS")
+        return 1, 1, []
+    else:
+        for key, vals in result.mismatches.items():
+            print(f"  FAIL: {key}: expected {vals['expected']}, got {vals['actual']}")
+        return 0, 1, [FACTORY_DEFAULTS]
+
+
 # ============================================================================
 # Test Data
 # ============================================================================
@@ -200,6 +317,11 @@ def main() -> int:
     parser.add_argument("--nmea", action="store_true", help="Test NMEA output")
     parser.add_argument("--time-mode", action="store_true", help="Test timing modes")
     parser.add_argument("--pps", action="store_true", help="Test PPS configuration")
+    parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Test NVM operations (save/reload + factory reset)",
+    )
     parser.add_argument("--all", action="store_true", help="Run all test groups")
 
     args = parser.parse_args()
@@ -209,10 +331,13 @@ def main() -> int:
     run_nmea = args.nmea or args.all
     run_time_mode = getattr(args, "time_mode") or args.all
     run_pps = args.pps or args.all
+    run_persist = args.persist
 
-    # Check that at least one test group is specified
-    if not (run_gnss or run_nmea or run_time_mode or run_pps):
-        parser.error("No test groups specified. Use --gnss, --nmea, --time-mode, --pps, or --all")
+    # Check that at least one test group or --persist is specified
+    if not (run_gnss or run_nmea or run_time_mode or run_pps or run_persist):
+        parser.error(
+            "No test groups specified. Use --gnss, --nmea, --time-mode, --pps, --persist, or --all"
+        )
 
     # Connect to receiver
     try:
@@ -224,17 +349,42 @@ def main() -> int:
     results: dict[str, tuple[int, int, list[ConfigProps]]] = {}
 
     try:
-        if run_gnss:
-            results["GNSS"] = run_tests(conn, "GNSS Configuration", GNSS_TESTS)
+        # Run normal (RAM-only) tests if not --persist-only mode
+        if not run_persist or (run_gnss or run_nmea or run_time_mode or run_pps):
+            if run_gnss:
+                results["GNSS"] = run_tests(conn, "GNSS Configuration", GNSS_TESTS)
 
-        if run_nmea:
-            results["NMEA"] = run_tests(conn, "NMEA Output", NMEA_TESTS)
+            if run_nmea:
+                results["NMEA"] = run_tests(conn, "NMEA Output", NMEA_TESTS)
 
-        if run_time_mode:
-            results["Time Mode"] = run_tests(conn, "Time Mode", TIME_MODE_TESTS)
+            if run_time_mode:
+                results["Time Mode"] = run_tests(conn, "Time Mode", TIME_MODE_TESTS)
 
-        if run_pps:
-            results["PPS"] = run_tests(conn, "PPS", PPS_TESTS)
+            if run_pps:
+                results["PPS"] = run_tests(conn, "PPS", PPS_TESTS)
+
+        # Run persist tests if --persist specified
+        if run_persist:
+            if run_gnss:
+                results["GNSS Persist"] = run_persist_tests(
+                    conn, "GNSS Configuration", GNSS_TESTS
+                )
+
+            if run_nmea:
+                results["NMEA Persist"] = run_persist_tests(
+                    conn, "NMEA Output", NMEA_TESTS
+                )
+
+            if run_time_mode:
+                results["Time Mode Persist"] = run_persist_tests(
+                    conn, "Time Mode", TIME_MODE_TESTS
+                )
+
+            if run_pps:
+                results["PPS Persist"] = run_persist_tests(conn, "PPS", PPS_TESTS)
+
+            # Always run factory reset test at the end when --persist is specified
+            results["Factory Reset"] = run_factory_reset_test(conn)
 
     finally:
         conn.close()
