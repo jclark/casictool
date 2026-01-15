@@ -1,1 +1,5 @@
-{"commitCoAuthor": false}
+{
+  "commit": {
+    "appendCoAuthor": false
+  }
+}
