@@ -65,6 +65,31 @@ CFG_CFG = MsgID(CLS_CFG, 0x05)
 CFG_TMODE = MsgID(CLS_CFG, 0x06)
 CFG_NAVX = MsgID(CLS_CFG, 0x07)
 
+# Mask bits for CFG-CFG (configuration sections)
+CFG_MASK_PORT = 0x0001  # B0: CFG-PRT
+CFG_MASK_MSG = 0x0002  # B1: CFG-MSG
+CFG_MASK_INF = 0x0004  # B2: CFG-INF
+CFG_MASK_RATE = 0x0008  # B3: CFG-RATE, CFG-TMODE
+CFG_MASK_TP = 0x0010  # B4: CFG-TP
+CFG_MASK_GROUP = 0x0020  # B5: CFG-GROUP
+CFG_MASK_ALL = 0xFFFF  # All sections
+
+# BBR mask bits for CFG-RST (battery-backed RAM sections)
+BBR_EPHEMERIS = 0x0001  # B0
+BBR_ALMANAC = 0x0002  # B1
+BBR_HEALTH = 0x0004  # B2
+BBR_IONOSPHERE = 0x0008  # B3
+BBR_POSITION = 0x0010  # B4
+BBR_CLOCK_DRIFT = 0x0020  # B5
+BBR_OSC_PARAMS = 0x0040  # B6
+BBR_UTC_PARAMS = 0x0080  # B7
+BBR_RTC = 0x0100  # B8
+BBR_CONFIG = 0x0200  # B9
+
+# Composite BBR masks
+BBR_NAV_DATA = 0x01FF  # All nav data (for cold start)
+BBR_ALL = 0x03FF  # Everything (for factory reset)
+
 
 def calc_checksum(cls: int, id: int, payload: bytes) -> int:
     """Calculate CASIC checksum (cumulative 32-bit word sum)."""
@@ -679,3 +704,24 @@ def parse_cfg_navx(payload: bytes) -> NavEngineConfig:
         t_acc=t_acc,
         static_hold_th=static_hold_th,
     )
+
+
+def build_cfg_cfg(mask: int, mode: int) -> bytes:
+    """Build CFG-CFG payload (4 bytes).
+
+    Args:
+        mask: Configuration sections to affect (bitmask, use CFG_MASK_* constants)
+        mode: 0=Clear (reset to defaults), 1=Save (RAM to NVM), 2=Load (NVM to RAM)
+    """
+    return struct.pack("<HBB", mask, mode, 0)
+
+
+def build_cfg_rst(nav_bbr_mask: int, reset_mode: int, start_mode: int) -> bytes:
+    """Build CFG-RST payload (4 bytes).
+
+    Args:
+        nav_bbr_mask: BBR sections to clear (bitmask, use BBR_* constants)
+        reset_mode: 0=HW immediate, 1=SW controlled, 2=SW GPS only, 4=HW after shutdown
+        start_mode: 0=Hot, 1=Warm, 2=Cold, 3=Factory
+    """
+    return struct.pack("<HBB", nav_bbr_mask, reset_mode, start_mode)

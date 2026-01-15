@@ -5,7 +5,26 @@ import struct
 from casic import (
     ACK_ACK,
     ACK_NAK,
+    BBR_ALL,
+    BBR_ALMANAC,
+    BBR_CLOCK_DRIFT,
+    BBR_CONFIG,
+    BBR_EPHEMERIS,
+    BBR_HEALTH,
+    BBR_IONOSPHERE,
+    BBR_NAV_DATA,
+    BBR_OSC_PARAMS,
+    BBR_POSITION,
+    BBR_RTC,
+    BBR_UTC_PARAMS,
     CFG_CFG,
+    CFG_MASK_ALL,
+    CFG_MASK_GROUP,
+    CFG_MASK_INF,
+    CFG_MASK_MSG,
+    CFG_MASK_PORT,
+    CFG_MASK_RATE,
+    CFG_MASK_TP,
     CFG_MSG,
     CFG_NAVX,
     CFG_PRT,
@@ -22,6 +41,8 @@ from casic import (
     ReceiverConfig,
     TimePulseConfig,
     TimingModeConfig,
+    build_cfg_cfg,
+    build_cfg_rst,
     calc_checksum,
     pack_msg,
     parse_cfg_navx,
@@ -337,3 +358,110 @@ class TestReceiverConfig:
         output = config.format()
         assert "9600" in output
         assert "1.0 Hz" in output
+
+
+class TestCfgMaskConstants:
+    def test_cfg_mask_bits(self) -> None:
+        assert CFG_MASK_PORT == 0x0001
+        assert CFG_MASK_MSG == 0x0002
+        assert CFG_MASK_INF == 0x0004
+        assert CFG_MASK_RATE == 0x0008
+        assert CFG_MASK_TP == 0x0010
+        assert CFG_MASK_GROUP == 0x0020
+        assert CFG_MASK_ALL == 0xFFFF
+
+    def test_cfg_masks_are_distinct_bits(self) -> None:
+        masks = [CFG_MASK_PORT, CFG_MASK_MSG, CFG_MASK_INF, CFG_MASK_RATE, CFG_MASK_TP, CFG_MASK_GROUP]
+        # Each mask should be a single bit
+        for mask in masks:
+            assert bin(mask).count("1") == 1
+        # All masks combined should have no overlap
+        combined = 0
+        for mask in masks:
+            assert (combined & mask) == 0
+            combined |= mask
+
+
+class TestBbrMaskConstants:
+    def test_bbr_mask_bits(self) -> None:
+        assert BBR_EPHEMERIS == 0x0001
+        assert BBR_ALMANAC == 0x0002
+        assert BBR_HEALTH == 0x0004
+        assert BBR_IONOSPHERE == 0x0008
+        assert BBR_POSITION == 0x0010
+        assert BBR_CLOCK_DRIFT == 0x0020
+        assert BBR_OSC_PARAMS == 0x0040
+        assert BBR_UTC_PARAMS == 0x0080
+        assert BBR_RTC == 0x0100
+        assert BBR_CONFIG == 0x0200
+
+    def test_bbr_nav_data_composite(self) -> None:
+        # BBR_NAV_DATA should be bits 0-8 (all nav data, no config)
+        expected = (
+            BBR_EPHEMERIS | BBR_ALMANAC | BBR_HEALTH | BBR_IONOSPHERE |
+            BBR_POSITION | BBR_CLOCK_DRIFT | BBR_OSC_PARAMS | BBR_UTC_PARAMS | BBR_RTC
+        )
+        assert BBR_NAV_DATA == expected
+        assert BBR_NAV_DATA == 0x01FF
+
+    def test_bbr_all_composite(self) -> None:
+        # BBR_ALL should be bits 0-9 (everything including config)
+        expected = BBR_NAV_DATA | BBR_CONFIG
+        assert BBR_ALL == expected
+        assert BBR_ALL == 0x03FF
+
+
+class TestBuildCfgCfg:
+    def test_save_all_config(self) -> None:
+        payload = build_cfg_cfg(CFG_MASK_ALL, mode=1)
+        assert len(payload) == 4
+        mask, mode, reserved = struct.unpack("<HBB", payload)
+        assert mask == 0xFFFF
+        assert mode == 1  # Save
+        assert reserved == 0
+
+    def test_load_all_config(self) -> None:
+        payload = build_cfg_cfg(CFG_MASK_ALL, mode=2)
+        mask, mode, reserved = struct.unpack("<HBB", payload)
+        assert mask == 0xFFFF
+        assert mode == 2  # Load
+
+    def test_clear_all_config(self) -> None:
+        payload = build_cfg_cfg(CFG_MASK_ALL, mode=0)
+        mask, mode, reserved = struct.unpack("<HBB", payload)
+        assert mask == 0xFFFF
+        assert mode == 0  # Clear
+
+    def test_save_rate_only(self) -> None:
+        payload = build_cfg_cfg(CFG_MASK_RATE, mode=1)
+        mask, mode, reserved = struct.unpack("<HBB", payload)
+        assert mask == 0x0008  # CFG_MASK_RATE
+        assert mode == 1
+
+
+class TestBuildCfgRst:
+    def test_cold_start(self) -> None:
+        payload = build_cfg_rst(BBR_NAV_DATA, reset_mode=1, start_mode=2)
+        assert len(payload) == 4
+        nav_bbr_mask, reset_mode, start_mode = struct.unpack("<HBB", payload)
+        assert nav_bbr_mask == 0x01FF  # BBR_NAV_DATA
+        assert reset_mode == 1  # SW controlled
+        assert start_mode == 2  # Cold start
+
+    def test_factory_start(self) -> None:
+        payload = build_cfg_rst(BBR_ALL, reset_mode=1, start_mode=3)
+        nav_bbr_mask, reset_mode, start_mode = struct.unpack("<HBB", payload)
+        assert nav_bbr_mask == 0x03FF  # BBR_ALL
+        assert reset_mode == 1  # SW controlled
+        assert start_mode == 3  # Factory start
+
+    def test_hot_start(self) -> None:
+        payload = build_cfg_rst(0, reset_mode=1, start_mode=0)
+        nav_bbr_mask, reset_mode, start_mode = struct.unpack("<HBB", payload)
+        assert nav_bbr_mask == 0
+        assert start_mode == 0  # Hot start
+
+    def test_hw_reset(self) -> None:
+        payload = build_cfg_rst(BBR_NAV_DATA, reset_mode=0, start_mode=2)
+        nav_bbr_mask, reset_mode, start_mode = struct.unpack("<HBB", payload)
+        assert reset_mode == 0  # HW immediate
