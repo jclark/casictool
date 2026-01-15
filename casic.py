@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import math
+import struct
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import serial
@@ -226,3 +229,363 @@ class CasicConnection:
                 return payload
 
         return None
+
+
+# ============================================================================
+# Configuration Dataclasses
+# ============================================================================
+
+
+@dataclass
+class PortConfig:
+    """CFG-PRT response: serial port configuration."""
+
+    port_id: int
+    proto_mask: int
+    mode: int
+    baud_rate: int
+
+    @property
+    def binary_input(self) -> bool:
+        return bool(self.proto_mask & 0x01)
+
+    @property
+    def text_input(self) -> bool:
+        return bool(self.proto_mask & 0x02)
+
+    @property
+    def binary_output(self) -> bool:
+        return bool(self.proto_mask & 0x10)
+
+    @property
+    def text_output(self) -> bool:
+        return bool(self.proto_mask & 0x20)
+
+    @property
+    def data_bits(self) -> int:
+        bits_code = (self.mode >> 6) & 0x03
+        return 5 + bits_code
+
+    @property
+    def parity(self) -> str:
+        parity_code = (self.mode >> 9) & 0x07
+        if parity_code & 0x04:  # Bit 2 set = no parity
+            return "N"
+        elif parity_code & 0x01:  # Bit 0 set = odd
+            return "O"
+        else:
+            return "E"
+
+    @property
+    def stop_bits(self) -> str:
+        stop_code = (self.mode >> 12) & 0x03
+        if stop_code == 0:
+            return "1"
+        elif stop_code == 1:
+            return "1.5"
+        else:
+            return "2"
+
+    @property
+    def data_format(self) -> str:
+        return f"{self.data_bits}{self.parity}{self.stop_bits}"
+
+    def format(self) -> str:
+        return f"Baud rate: {self.baud_rate}\nData format: {self.data_format}"
+
+
+@dataclass
+class RateConfig:
+    """CFG-RATE response: navigation update rate."""
+
+    interval_ms: int
+
+    @property
+    def update_rate_hz(self) -> float:
+        if self.interval_ms == 0:
+            return 0.0
+        return 1000.0 / self.interval_ms
+
+    def format(self) -> str:
+        return f"Navigation rate: {self.update_rate_hz:.1f} Hz"
+
+
+@dataclass
+class TimePulseConfig:
+    """CFG-TP response: PPS/time pulse configuration."""
+
+    interval_us: int
+    width_us: int
+    enable: int
+    polarity: int
+    time_ref: int
+    time_source: int
+    user_delay: float
+
+    @property
+    def enabled(self) -> bool:
+        return self.enable != 0
+
+    @property
+    def enable_mode(self) -> str:
+        modes = {0: "Off", 1: "On", 2: "Auto Maintain", 3: "Fix Only"}
+        return modes.get(self.enable, f"Unknown ({self.enable})")
+
+    @property
+    def polarity_str(self) -> str:
+        return "Falling edge" if self.polarity else "Rising edge"
+
+    @property
+    def time_ref_str(self) -> str:
+        return "Satellite Time" if self.time_ref else "UTC"
+
+    @property
+    def time_source_str(self) -> str:
+        sources = {
+            0: "GPS",
+            1: "BDS",
+            2: "GLONASS",
+            4: "BDS (Main)",
+            5: "GPS (Main)",
+            6: "GLONASS (Main)",
+        }
+        return sources.get(self.time_source, f"Unknown ({self.time_source})")
+
+    @property
+    def interval_s(self) -> float:
+        return self.interval_us / 1_000_000.0
+
+    @property
+    def width_ms(self) -> float:
+        return self.width_us / 1000.0
+
+    def format(self) -> str:
+        if not self.enabled:
+            return "Time pulse: disabled"
+        polarity = "falling" if self.polarity else "rising"
+        return (
+            f"Time pulse: enabled; width {self.width_ms / 1000:.3g} s; "
+            f"period {self.interval_s:.3g} s; polarity {polarity}"
+        )
+
+
+@dataclass
+class TimingModeConfig:
+    """CFG-TMODE response: timing mode configuration."""
+
+    mode: int
+    fixed_pos_x: float
+    fixed_pos_y: float
+    fixed_pos_z: float
+    fixed_pos_var: float
+    svin_min_dur: int
+    svin_var_limit: float
+
+    @property
+    def mode_str(self) -> str:
+        modes = {0: "Auto", 1: "Survey-In", 2: "Fixed"}
+        return modes.get(self.mode, f"Unknown ({self.mode})")
+
+    def format(self) -> str:
+        lines = [f"Mode: {self.mode_str.lower()}"]
+        if self.mode == 2:  # Fixed position
+            lines.append(
+                f"Fixed position ECEF: {self.fixed_pos_x:.3f}, "
+                f"{self.fixed_pos_y:.3f}, {self.fixed_pos_z:.3f}"
+            )
+            acc = math.sqrt(self.fixed_pos_var) if self.fixed_pos_var >= 0 else 0
+            lines.append(f"Fixed position accuracy: {acc:.3g} m")
+        return "\n".join(lines)
+
+
+@dataclass
+class NavEngineConfig:
+    """CFG-NAVX response: navigation engine configuration."""
+
+    mask: int
+    dyn_model: int
+    fix_mode: int
+    min_svs: int
+    max_svs: int
+    min_cno: int
+    ini_fix_3d: int
+    min_elev: int
+    dr_limit: int
+    nav_system: int
+    wn_rollover: int
+    fixed_alt: float
+    fixed_alt_var: float
+    p_dop: float
+    t_dop: float
+    p_acc: float
+    t_acc: float
+    static_hold_th: float
+
+    @property
+    def dyn_model_str(self) -> str:
+        models = {
+            0: "Portable",
+            1: "Stationary",
+            2: "Pedestrian",
+            3: "Automotive",
+            4: "Sea",
+            5: "Air 1g",
+            6: "Air 2g",
+            7: "Air 4g",
+        }
+        return models.get(self.dyn_model, f"Unknown ({self.dyn_model})")
+
+    @property
+    def fix_mode_str(self) -> str:
+        modes = {1: "2D", 2: "3D", 3: "Auto"}
+        return modes.get(self.fix_mode, f"Unknown ({self.fix_mode})")
+
+    @property
+    def gnss_list(self) -> list[str]:
+        systems = []
+        if self.nav_system & 0x01:
+            systems.append("GPS")
+        if self.nav_system & 0x02:
+            systems.append("BDS")
+        if self.nav_system & 0x04:
+            systems.append("GLONASS")
+        return systems
+
+    def format(self) -> str:
+        gnss_str = ", ".join(self.gnss_list) if self.gnss_list else "None"
+        return f"Constellations enabled: {gnss_str}"
+
+
+@dataclass
+class ReceiverConfig:
+    """Container for all receiver configuration sections."""
+
+    port: PortConfig | None = None
+    rate: RateConfig | None = None
+    time_pulse: TimePulseConfig | None = None
+    timing_mode: TimingModeConfig | None = None
+    nav_engine: NavEngineConfig | None = None
+
+    def format(self) -> str:
+        sections = []
+        if self.nav_engine is not None:
+            sections.append(self.nav_engine.format())
+        if self.time_pulse is not None:
+            sections.append(self.time_pulse.format())
+        if self.timing_mode is not None:
+            sections.append(self.timing_mode.format())
+        if self.rate is not None:
+            sections.append(self.rate.format())
+        if self.port is not None:
+            sections.append(self.port.format())
+        return "\n".join(sections)
+
+
+# ============================================================================
+# Payload Parsers
+# ============================================================================
+
+
+def parse_cfg_prt(payload: bytes) -> PortConfig:
+    """Parse CFG-PRT response payload (8 bytes)."""
+    if len(payload) < 8:
+        raise ValueError(f"CFG-PRT payload too short: {len(payload)} bytes, expected 8")
+    port_id, proto_mask, mode, baud_rate = struct.unpack("<BBHI", payload[:8])
+    return PortConfig(port_id=port_id, proto_mask=proto_mask, mode=mode, baud_rate=baud_rate)
+
+
+def parse_cfg_rate(payload: bytes) -> RateConfig:
+    """Parse CFG-RATE response payload (4 bytes)."""
+    if len(payload) < 4:
+        raise ValueError(f"CFG-RATE payload too short: {len(payload)} bytes, expected 4")
+    interval_ms, _reserved = struct.unpack("<HH", payload[:4])
+    return RateConfig(interval_ms=interval_ms)
+
+
+def parse_cfg_tp(payload: bytes) -> TimePulseConfig:
+    """Parse CFG-TP response payload (16 bytes)."""
+    if len(payload) < 16:
+        raise ValueError(f"CFG-TP payload too short: {len(payload)} bytes, expected 16")
+    interval, width, enable, polar, time_ref, time_source, user_delay = struct.unpack(
+        "<IIbbbBf", payload[:16]
+    )
+    return TimePulseConfig(
+        interval_us=interval,
+        width_us=width,
+        enable=enable,
+        polarity=polar,
+        time_ref=time_ref,
+        time_source=time_source,
+        user_delay=user_delay,
+    )
+
+
+def parse_cfg_tmode(payload: bytes) -> TimingModeConfig:
+    """Parse CFG-TMODE response payload (40 bytes)."""
+    if len(payload) < 40:
+        raise ValueError(f"CFG-TMODE payload too short: {len(payload)} bytes, expected 40")
+    mode, pos_x, pos_y, pos_z, pos_var, svin_dur, svin_var = struct.unpack(
+        "<IdddIfI", payload[:40]
+    )
+    # svin_var is actually R4 (float), but packed after U4
+    # Re-parse with correct format
+    mode, pos_x, pos_y, pos_z, pos_var, svin_dur, svin_var = struct.unpack(
+        "<IdddfIf", payload[:40]
+    )
+    return TimingModeConfig(
+        mode=mode,
+        fixed_pos_x=pos_x,
+        fixed_pos_y=pos_y,
+        fixed_pos_z=pos_z,
+        fixed_pos_var=pos_var,
+        svin_min_dur=svin_dur,
+        svin_var_limit=svin_var,
+    )
+
+
+def parse_cfg_navx(payload: bytes) -> NavEngineConfig:
+    """Parse CFG-NAVX response payload (44 bytes)."""
+    if len(payload) < 44:
+        raise ValueError(f"CFG-NAVX payload too short: {len(payload)} bytes, expected 44")
+    # Unpack the structure according to spec
+    (
+        mask,
+        dyn_model,
+        fix_mode,
+        min_svs,
+        max_svs,
+        min_cno,
+        res1,
+        ini_fix_3d,
+        min_elev,
+        dr_limit,
+        nav_system,
+        wn_rollover,
+        fixed_alt,
+        fixed_alt_var,
+        p_dop,
+        t_dop,
+        p_acc,
+        t_acc,
+        static_hold_th,
+    ) = struct.unpack("<IbBbbBBbbbBHfffffff", payload[:44])
+    return NavEngineConfig(
+        mask=mask,
+        dyn_model=dyn_model,
+        fix_mode=fix_mode,
+        min_svs=min_svs,
+        max_svs=max_svs,
+        min_cno=min_cno,
+        ini_fix_3d=ini_fix_3d,
+        min_elev=min_elev,
+        dr_limit=dr_limit,
+        nav_system=nav_system,
+        wn_rollover=wn_rollover,
+        fixed_alt=fixed_alt,
+        fixed_alt_var=fixed_alt_var,
+        p_dop=p_dop,
+        t_dop=t_dop,
+        p_acc=p_acc,
+        t_acc=t_acc,
+        static_hold_th=static_hold_th,
+    )
