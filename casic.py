@@ -639,16 +639,15 @@ def parse_cfg_tp(payload: bytes) -> TimePulseConfig:
 
 
 def parse_cfg_tmode(payload: bytes) -> TimingModeConfig:
-    """Parse CFG-TMODE response payload (40 bytes)."""
+    """Parse CFG-TMODE response payload (40 bytes).
+
+    Note: The mode field is documented as U4 but the receiver returns
+    unknown values in the upper 2 bytes. We parse as U2 mode + U2 reserved.
+    """
     if len(payload) < 40:
         raise ValueError(f"CFG-TMODE payload too short: {len(payload)} bytes, expected 40")
-    mode, pos_x, pos_y, pos_z, pos_var, svin_dur, svin_var = struct.unpack(
-        "<IdddIfI", payload[:40]
-    )
-    # svin_var is actually R4 (float), but packed after U4
-    # Re-parse with correct format
-    mode, pos_x, pos_y, pos_z, pos_var, svin_dur, svin_var = struct.unpack(
-        "<IdddfIf", payload[:40]
+    mode, _reserved, pos_x, pos_y, pos_z, pos_var, svin_dur, svin_var = struct.unpack(
+        "<HHdddfIf", payload[:40]
     )
     return TimingModeConfig(
         mode=mode,
@@ -676,6 +675,9 @@ def build_cfg_tmode(
         fixed_pos_acc: Position accuracy in meters (for mode=2)
         survey_min_dur: Survey minimum duration in seconds (for mode=1)
         survey_acc: Survey target accuracy in meters (for mode=1)
+
+    Note: The mode field is documented as U4 but we use U2 mode + U2 reserved
+    to match receiver behavior (upper 2 bytes contain unknown values on read).
     """
     if fixed_pos is None:
         fixed_pos = (0.0, 0.0, 0.0)
@@ -685,8 +687,9 @@ def build_cfg_tmode(
     survey_var_limit = survey_acc**2
 
     return struct.pack(
-        "<IdddfIf",
-        mode,  # U4: mode
+        "<HHdddfIf",
+        mode,  # U2: mode
+        0,  # U2: reserved
         fixed_pos[0],  # R8: fixedPosX
         fixed_pos[1],  # R8: fixedPosY
         fixed_pos[2],  # R8: fixedPosZ

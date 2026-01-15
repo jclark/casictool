@@ -16,6 +16,10 @@ from job import (
     NMEA,
     ConfigJob,
     ConfigProps,
+    FixedMode,
+    MobileMode,
+    SurveyMode,
+    TimePulse,
     execute_job,
     nmea_rates,
     query_config_props,
@@ -154,6 +158,32 @@ NMEA_TESTS: list[ConfigProps] = [
     {"nmea_out": nmea_rates(GGA=1, GLL=1, GSA=1, GSV=1, RMC=1, VTG=1, ZDA=1)},
 ]
 
+# Sample ECEF position for testing
+TEST_ECEF = (-1144698.0455, 6090335.4099, 1504171.3914)
+
+TIME_MODE_TESTS: list[ConfigProps] = [
+    # Mobile mode
+    {"time_mode": MobileMode()},
+    # Survey-in mode with different parameters
+    {"time_mode": SurveyMode(min_dur=60, acc=50.0)},
+    {"time_mode": SurveyMode(min_dur=120, acc=25.0)},
+    # Fixed position mode
+    {"time_mode": FixedMode(ecef=TEST_ECEF, acc=10.0)},
+    # Back to mobile mode
+    {"time_mode": MobileMode()},
+]
+
+PPS_TESTS: list[ConfigProps] = [
+    # GPS time source with 100us pulse
+    {"time_pulse": TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GPS)},
+    # BDS time source with 1ms pulse
+    {"time_pulse": TimePulse(period=1.0, width=0.001, time_gnss=GNSS.BDS)},
+    # GLONASS time source
+    {"time_pulse": TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GLO)},
+    # Back to GPS
+    {"time_pulse": TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GPS)},
+]
+
 
 # ============================================================================
 # CLI
@@ -163,18 +193,6 @@ NMEA_TESTS: list[ConfigProps] = [
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Hardware integration tests for casictool",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Test groups:
-  --gnss       Test GNSS constellation configuration
-  --nmea       Test NMEA message output configuration
-  --time-mode  Test timing modes (survey, fixed, mobile)
-  --pps        Test PPS/time pulse configuration
-  --all        Run all test groups
-
-Modifiers:
-  --persist    Also test NVM operations (save/reload/factory-reset)
-""",
     )
     parser.add_argument("-d", "--device", required=True, help="Serial device path")
     parser.add_argument("-s", "--speed", type=int, required=True, help="Baud rate")
@@ -183,8 +201,6 @@ Modifiers:
     parser.add_argument("--time-mode", action="store_true", help="Test timing modes")
     parser.add_argument("--pps", action="store_true", help="Test PPS configuration")
     parser.add_argument("--all", action="store_true", help="Run all test groups")
-    parser.add_argument("--persist", action="store_true", help="Test NVM operations")
-    parser.add_argument("--verbose", action="store_true", help="Show more detail")
 
     args = parser.parse_args()
 
@@ -193,11 +209,10 @@ Modifiers:
     run_nmea = args.nmea or args.all
     run_time_mode = getattr(args, "time_mode") or args.all
     run_pps = args.pps or args.all
-    run_persist = args.persist
 
     # Check that at least one test group is specified
-    if not (run_gnss or run_nmea or run_time_mode or run_pps or run_persist):
-        parser.error("No test groups specified. Use --gnss, --nmea, --time-mode, --pps, --all, or --persist")
+    if not (run_gnss or run_nmea or run_time_mode or run_pps):
+        parser.error("No test groups specified. Use --gnss, --nmea, --time-mode, --pps, or --all")
 
     # Connect to receiver
     try:
@@ -215,9 +230,11 @@ Modifiers:
         if run_nmea:
             results["NMEA"] = run_tests(conn, "NMEA Output", NMEA_TESTS)
 
-        # TODO: Add time-mode tests
-        # TODO: Add PPS tests
-        # TODO: Add persist tests
+        if run_time_mode:
+            results["Time Mode"] = run_tests(conn, "Time Mode", TIME_MODE_TESTS)
+
+        if run_pps:
+            results["PPS"] = run_tests(conn, "PPS", PPS_TESTS)
 
     finally:
         conn.close()

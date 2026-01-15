@@ -206,31 +206,41 @@ def verify_factory_reset(conn) -> TestResult:
 
 **Prerequisite**: Implement ConfigProps (see `plan/configprops.md`)
 
-1. **Framework**: Create `casic_hwtest.py` with:
+1. ✅ **Framework**: Create `casic_hwtest.py` with:
    - CLI argument parsing
    - `verify()` function using ConfigProps
    - Test runner that iterates and prints results
 
-2. **--gnss**: Add GNSS_TESTS list
+2. ✅ **--gnss**: Add GNSS_TESTS list
    - Run hardware test, commit when passing
 
-3. **--nmea**: Add NMEA_TESTS list
+3. ✅ **--nmea**: Add NMEA_TESTS list
    - Run hardware test, commit when passing
 
-4. **--time-mode**: Add TIME_MODE_TESTS list
+4. ✅ **--time-mode**: Add TIME_MODE_TESTS list
    - Run hardware test, commit when passing
 
-5. **--pps**: Add PPS_TESTS list
+5. ✅ **--pps**: Add PPS_TESTS list
    - Run hardware test, commit when passing
 
-6. **Combined testing**: Test multiple args together
+6. ✅ **Combined testing**: Test multiple args together
    - Run `--gnss --nmea`, `--all`, etc.
    - Commit when passing
 
-7. **--persist**: Add `verify_persist()` and `verify_factory_reset()` functions
-   - Test with each individual arg: `--gnss --persist`, `--nmea --persist`, etc.
-   - Test standalone: `--persist` by itself
-   - Run hardware tests, commit when passing
+7. **--persist**: NOT YET IMPLEMENTED
+   - `--persist` alone: Run factory reset test only
+   - `--persist` with other options: Run persist tests for selected groups + factory reset
+
+   **verify_persist(props, alt_props)** proves that `props` was saved to NVM:
+   1. Set `props` and save to NVM
+   2. Set `alt_props` (different config) WITHOUT saving - this changes RAM
+   3. Reload from NVM - should restore `props`, not `alt_props`
+   4. If we get `props` back, the save worked; if we get `alt_props`, it didn't
+
+   For alt_props, use the next item in the test list (wrap around for last).
+   Example: for GNSS_TESTS[0] ({GPS}), alt_props = GNSS_TESTS[1] ({BDS})
+
+   Run `verify_factory_reset()` once at the end of all persist tests.
 
 ## Verification
 

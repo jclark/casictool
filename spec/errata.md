@@ -48,3 +48,18 @@ The timeSource field in CFG-TP has two modes per constellation:
 | 5 | GPS (mainly) - prefer GPS, auto-fallback to others if unavailable |
 | 6 | GLONASS (mainly) - prefer GLONASS, auto-fallback to others if unavailable |
 
+## CFG-TMODE Mode Field
+
+**Spec says:**
+- mode: U4 (0=Auto, 1=Survey-In, 2=Fixed)
+
+**Observed behavior:**
+- The receiver returns unknown values in the upper 2 bytes of the mode field
+- Example: Setting mode=2 (Fixed) and reading back gives `02 00 54 e3` instead of `02 00 00 00`
+- The lower 2 bytes correctly contain the mode value (0, 1, or 2)
+- The upper 2 bytes contain unknown/undocumented data
+
+**Workaround:**
+- Parse as U2 mode + U2 reserved instead of U4
+- When building the payload, set reserved to 0
+
