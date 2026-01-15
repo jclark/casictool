@@ -19,7 +19,7 @@ Helpful diagnostics should identify whether failures are bugs in casictool vs un
 
 2. **Selective testing** - Run specific test groups via flags:
    - `--gnss` - GNSS constellation configuration
-   - `--timing` - Timing modes (survey, fixed, mobile)
+   - `--time-mode` - Timing modes (survey, fixed, mobile)
    - `--nmea` - NMEA message output
    - `--pps` - PPS/time pulse configuration
    - `--persist` - Modifier: test that changes survive save/reload
@@ -31,22 +31,22 @@ Helpful diagnostics should identify whether failures are bugs in casictool vs un
 
 ```bash
 casic_hwtest -d /dev/ttyUSB0 -s 38400 --gnss           # Test GNSS only
-casic_hwtest -d /dev/ttyUSB0 -s 38400 --gnss --timing  # Test GNSS and timing
+casic_hwtest -d /dev/ttyUSB0 -s 38400 --gnss --time-mode  # Test GNSS and timing
 casic_hwtest -d /dev/ttyUSB0 -s 38400 --all            # Run everything
-casic_hwtest --list                                     # Show available test groups
+casic_hwtest --help                                     # Show available test groups
 ```
 
 Flags:
 - `-d`, `--device` - Serial device path (required)
 - `-s`, `--speed` - Baud rate (required)
 - `--gnss` - Test GNSS constellation configuration
-- `--timing` - Test timing modes (survey, fixed, mobile)
+- `--time-mode` - Test timing modes (survey, fixed, mobile)
 - `--nmea` - Test NMEA message output configuration
 - `--pps` - Test PPS/time pulse configuration
 - `--persist` - Modifier: also test NVM operations (save/reload/factory-reset)
-- `--all` - Run all test groups (--gnss --timing --nmea --pps)
+- `--all` - Run all test groups (--gnss --time-mode --nmea --pps)
 - `--verbose` - Show more detail
-- `--list` - List available test groups
+- `--help` - Show help including available test groups
 
 `--persist` must be specified explicitly to authorize NVM changes. Without it, NVM is never touched.
 
@@ -144,7 +144,7 @@ Single file keeps it simple. Test data grouped by category.
 - Enable GPS+BDS+GLONASS
 - (verify each combination actually takes effect)
 
-### --timing
+### --time-mode
 - Set mobile mode
 - Set survey mode (min duration, accuracy)
 - Set fixed position (ECEF coords, accuracy)
@@ -206,15 +206,31 @@ def verify_factory_reset(conn) -> TestResult:
 
 **Prerequisite**: Implement ConfigProps (see `plan/configprops.md`)
 
-1. **Framework + --gnss**: Create `casic_hwtest.py` with:
+1. **Framework**: Create `casic_hwtest.py` with:
    - CLI argument parsing
    - `verify()` function using ConfigProps
-   - GNSS_TESTS list
    - Test runner that iterates and prints results
 
-2. **Add remaining test groups**: --pps, --timing, --nmea (just add test data lists)
+2. **--gnss**: Add GNSS_TESTS list
+   - Run hardware test, commit when passing
 
-3. **Add --persist**: Add `verify_persist()` and `verify_factory_reset()` functions
+3. **--nmea**: Add NMEA_TESTS list
+   - Run hardware test, commit when passing
+
+4. **--time-mode**: Add TIME_MODE_TESTS list
+   - Run hardware test, commit when passing
+
+5. **--pps**: Add PPS_TESTS list
+   - Run hardware test, commit when passing
+
+6. **Combined testing**: Test multiple args together
+   - Run `--gnss --nmea`, `--all`, etc.
+   - Commit when passing
+
+7. **--persist**: Add `verify_persist()` and `verify_factory_reset()` functions
+   - Test with each individual arg: `--gnss --persist`, `--nmea --persist`, etc.
+   - Test standalone: `--persist` by itself
+   - Run hardware tests, commit when passing
 
 ## Verification
 
