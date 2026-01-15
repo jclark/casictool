@@ -55,19 +55,19 @@ class TestBuildCfgTmode:
 
 class TestParseEcefCoords:
     def test_valid_coords(self) -> None:
-        from casictool import parse_ecef_coords
+        from job import parse_ecef_coords
 
         result = parse_ecef_coords("4000000,1000000,5000000")
         assert result == (4000000.0, 1000000.0, 5000000.0)
 
     def test_with_spaces(self) -> None:
-        from casictool import parse_ecef_coords
+        from job import parse_ecef_coords
 
         result = parse_ecef_coords("4000000, 1000000, 5000000")
         assert result == (4000000.0, 1000000.0, 5000000.0)
 
     def test_negative_coords(self) -> None:
-        from casictool import parse_ecef_coords
+        from job import parse_ecef_coords
 
         result = parse_ecef_coords("-1144698.0455,6090335.4099,1504171.3914")
         assert result[0] == pytest.approx(-1144698.0455)
@@ -75,19 +75,19 @@ class TestParseEcefCoords:
         assert result[2] == pytest.approx(1504171.3914)
 
     def test_invalid_count_too_few(self) -> None:
-        from casictool import parse_ecef_coords
+        from job import parse_ecef_coords
 
         with pytest.raises(ValueError, match="3 values"):
             parse_ecef_coords("4000000,1000000")
 
     def test_invalid_count_too_many(self) -> None:
-        from casictool import parse_ecef_coords
+        from job import parse_ecef_coords
 
         with pytest.raises(ValueError, match="3 values"):
             parse_ecef_coords("4000000,1000000,5000000,6000000")
 
     def test_invalid_number(self) -> None:
-        from casictool import parse_ecef_coords
+        from job import parse_ecef_coords
 
         with pytest.raises(ValueError):
             parse_ecef_coords("4000000,abc,5000000")

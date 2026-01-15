@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CASIC GPS receiver configuration tool."""
+"""CASIC GPS receiver configuration tool - CLI interface."""
 
 from __future__ import annotations
 
@@ -8,323 +8,19 @@ import sys
 
 import serial
 
-from casic import (
-    BBR_ALL,
-    BBR_NAV_DATA,
-    CFG_CFG,
-    CFG_MASK_ALL,
-    CFG_MASK_MSG,
-    CFG_MASK_NAV,
-    CFG_MSG,
-    CFG_NAVX,
-    CFG_PRT,
-    CFG_RATE,
-    CFG_RST,
-    CFG_TMODE,
-    CFG_TP,
-    MON_VER,
-    NMEA_MESSAGES,
-    CasicConnection,
-    MessageRatesConfig,
-    ReceiverConfig,
-    VersionInfo,
-    build_cfg_cfg,
-    build_cfg_msg_set,
-    build_cfg_navx,
-    build_cfg_rst,
-    build_cfg_tmode,
-    parse_cfg_msg,
-    parse_cfg_navx,
-    parse_cfg_prt,
-    parse_cfg_rate,
-    parse_cfg_tmode,
-    parse_cfg_tp,
-    parse_mon_ver,
+from casic import CFG_MASK_ALL, CasicConnection
+from job import (
+    CommandResult,
+    ConfigJob,
+    execute_job,
+    parse_ecef_coords,
+    parse_gnss_arg,
+    parse_nmea_out,
 )
 
 
-class ConfigChanges:
-    """Track which configuration sections were modified."""
-
-    def __init__(self) -> None:
-        self.mask = 0
-
-    def mark_nav(self) -> None:
-        """Mark navigation configuration as changed (CFG-RATE, CFG-TMODE, CFG-NAVX)."""
-        self.mask |= CFG_MASK_NAV
-
-    def mark_msg(self) -> None:
-        """Mark message output configuration as changed."""
-        self.mask |= CFG_MASK_MSG
-
-
-def save_config(conn: CasicConnection, mask: int) -> bool:
-    """Save configuration sections to NVM."""
-    payload = build_cfg_cfg(mask, mode=1)  # mode=1 is Save
-    return conn.send_and_wait_ack(CFG_CFG.cls, CFG_CFG.id, payload)
-
-
-def load_config(conn: CasicConnection, mask: int) -> bool:
-    """Load configuration sections from NVM."""
-    payload = build_cfg_cfg(mask, mode=2)  # mode=2 is Load
-    return conn.send_and_wait_ack(CFG_CFG.cls, CFG_CFG.id, payload)
-
-
-def reset_receiver(conn: CasicConnection, factory: bool = False) -> None:
-    """Reset the receiver.
-
-    Args:
-        factory: If True, perform factory reset (clears NVM config).
-                 If False, perform cold start (preserves NVM config).
-    """
-    if factory:
-        nav_bbr_mask = BBR_ALL  # Clear everything including config
-        start_mode = 3  # Factory Start
-    else:
-        nav_bbr_mask = BBR_NAV_DATA  # Clear nav data, preserve config
-        start_mode = 2  # Cold Start
-
-    reset_mode = 1  # Controlled Software Reset
-    payload = build_cfg_rst(nav_bbr_mask, reset_mode, start_mode)
-
-    # Note: After reset, receiver may not send ACK before restarting
-    # We send the command without waiting for ACK
-    conn.send(CFG_RST.cls, CFG_RST.id, payload)
-
-
-def probe_receiver(conn: CasicConnection) -> tuple[bool, VersionInfo | None]:
-    """Probe receiver with MON-VER to verify it's a CASIC device.
-
-    Returns (is_casic, version_info). A NAK response proves it's CASIC
-    even if MON-VER isn't supported.
-    """
-    result = conn.poll(MON_VER.cls, MON_VER.id)
-    if result.success:
-        return True, parse_mon_ver(result.payload)  # type: ignore[arg-type]
-    if result.nak:
-        return True, None  # NAK proves it's CASIC
-    return False, None  # Timeout - not CASIC
-
-
-def query_nmea_rates(conn: CasicConnection) -> MessageRatesConfig:
-    """Query NMEA message output rates via CFG-MSG.
-
-    CFG-MSG query with empty payload returns all configured message rates.
-    Each response is 4 bytes: cls, id, rate (U2).
-    """
-    # Build lookup from (cls, id) -> name for NMEA messages we care about
-    nmea_lookup = {(msg.cls, msg.id): name for name, msg in NMEA_MESSAGES}
-
-    rates: dict[str, int] = {}
-    conn.send(CFG_MSG.cls, CFG_MSG.id, b"")
-
-    # Collect all CFG-MSG responses
-    while True:
-        result = conn.receive(timeout=0.3)
-        if result is None:
-            break
-        recv_id, recv_payload = result
-        if recv_id.cls == CFG_MSG.cls and recv_id.id == CFG_MSG.id and len(recv_payload) >= 4:
-            msg_cls, msg_id, rate = recv_payload[0], recv_payload[1], parse_cfg_msg(recv_payload)
-            name = nmea_lookup.get((msg_cls, msg_id))
-            if name:
-                rates[name] = rate
-
-    return MessageRatesConfig(rates=rates)
-
-
-def set_nmea_message_rate(conn: CasicConnection, message_name: str, rate: int) -> bool:
-    """Set output rate for a specific NMEA message.
-
-    Args:
-        conn: Active CASIC connection
-        message_name: NMEA message name (GGA, RMC, etc.)
-        rate: Output rate (0=disable, 1+=enable at rate)
-
-    Returns:
-        True if acknowledged, False on failure
-    """
-    # Lookup message ID from name
-    nmea_lookup = {name: msg for name, msg in NMEA_MESSAGES}
-    msg = nmea_lookup.get(message_name.upper())
-    if msg is None:
-        return False
-
-    payload = build_cfg_msg_set(msg.cls, msg.id, rate)
-    return conn.send_and_wait_ack(CFG_MSG.cls, CFG_MSG.id, payload)
-
-
-def show_config(conn: CasicConnection) -> ReceiverConfig:
-    """Query all CFG messages and return receiver configuration."""
-    config = ReceiverConfig()
-
-    # Query CFG-PRT
-    result = conn.poll(CFG_PRT.cls, CFG_PRT.id)
-    if result.success:
-        config.port = parse_cfg_prt(result.payload)  # type: ignore[arg-type]
-
-    # Query CFG-RATE
-    result = conn.poll(CFG_RATE.cls, CFG_RATE.id)
-    if result.success:
-        config.rate = parse_cfg_rate(result.payload)  # type: ignore[arg-type]
-
-    # Query NMEA message rates via CFG-MSG
-    config.message_rates = query_nmea_rates(conn)
-
-    # Query CFG-TP
-    result = conn.poll(CFG_TP.cls, CFG_TP.id)
-    if result.success:
-        config.time_pulse = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
-
-    # Query CFG-TMODE
-    result = conn.poll(CFG_TMODE.cls, CFG_TMODE.id)
-    if result.success:
-        config.timing_mode = parse_cfg_tmode(result.payload)  # type: ignore[arg-type]
-
-    # Query CFG-NAVX
-    result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
-    if result.success:
-        config.nav_engine = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
-
-    return config
-
-
-def parse_ecef_coords(coord_str: str) -> tuple[float, float, float]:
-    """Parse comma-separated ECEF coordinates."""
-    parts = coord_str.split(",")
-    if len(parts) != 3:
-        raise ValueError("ECEF coordinates must be X,Y,Z (3 values)")
-    return (float(parts[0].strip()), float(parts[1].strip()), float(parts[2].strip()))
-
-
-VALID_NMEA_MESSAGES = {"GGA", "GLL", "GSA", "GSV", "RMC", "VTG", "ZDA"}
-
-
-def parse_nmea_out(nmea_str: str) -> list[str]:
-    """Parse --nmea-out argument into list of messages to enable.
-
-    Args:
-        nmea_str: Comma-separated message list (e.g., "GGA,RMC,ZDA")
-
-    Returns:
-        List of message names to enable (all others will be disabled)
-    """
-    enable = []
-
-    for item in nmea_str.split(","):
-        item = item.strip().upper()
-        if not item:
-            continue
-        if item in VALID_NMEA_MESSAGES:
-            enable.append(item)
-        else:
-            raise ValueError(f"Unknown NMEA message: {item}")
-
-    return enable
-
-
-# GNSS constellation names and aliases
-VALID_GNSS = {"GPS", "BDS", "GLO", "GLN", "GLONASS"}
-UNSUPPORTED_GNSS = {"GAL", "GALILEO", "QZSS", "NAVIC", "SBAS"}
-
-
-def parse_gnss_arg(gnss_str: str) -> int:
-    """Parse --gnss argument into navSystem bitmask.
-
-    Args:
-        gnss_str: Comma-separated list (e.g., "GPS,BDS,GLO")
-
-    Returns:
-        Bitmask: B0=GPS, B1=BDS, B2=GLONASS
-
-    Raises:
-        ValueError: If unknown or unsupported constellation specified
-    """
-    mask = 0
-
-    for item in gnss_str.split(","):
-        item = item.strip().upper()
-        if not item:
-            continue
-        if item in UNSUPPORTED_GNSS:
-            raise ValueError(
-                f"Unsupported constellation: {item}. "
-                "This receiver only supports GPS, BDS, and GLONASS."
-            )
-        if item not in VALID_GNSS:
-            raise ValueError(f"Unknown constellation: {item}")
-
-        if item == "GPS":
-            mask |= 0x01
-        elif item == "BDS":
-            mask |= 0x02
-        elif item in ("GLO", "GLN", "GLONASS"):
-            mask |= 0x04
-
-    return mask
-
-
-def set_gnss(conn: CasicConnection, nav_system: int) -> bool:
-    """Configure GNSS constellation selection using read-modify-write.
-
-    Steps:
-    1. Query current CFG-NAVX configuration
-    2. Modify nav_system field only
-    3. Send complete payload back to receiver
-    4. Wait for ACK
-
-    Args:
-        conn: Active CASIC connection
-        nav_system: Bitmask (B0=GPS, B1=BDS, B2=GLONASS)
-
-    Returns:
-        True if ACK received, False on NAK or timeout
-    """
-    # Query current config
-    result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
-    if not result.success:
-        return False
-
-    # Parse and modify
-    config = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
-    payload = build_cfg_navx(config, nav_system=nav_system)
-
-    # Send and wait for ACK
-    return conn.send_and_wait_ack(CFG_NAVX.cls, CFG_NAVX.id, payload)
-
-
-def set_survey_mode(conn: CasicConnection, min_dur: int, acc: float) -> bool:
-    """Configure receiver for survey-in mode."""
-    payload = build_cfg_tmode(
-        mode=1,  # Survey-In
-        survey_min_dur=min_dur,
-        survey_acc=acc,
-    )
-    return conn.send_and_wait_ack(CFG_TMODE.cls, CFG_TMODE.id, payload)
-
-
-def set_fixed_position(
-    conn: CasicConnection,
-    ecef: tuple[float, float, float],
-    acc: float,
-) -> bool:
-    """Configure receiver with fixed ECEF position."""
-    payload = build_cfg_tmode(
-        mode=2,  # Fixed
-        fixed_pos=ecef,
-        fixed_pos_acc=acc,
-    )
-    return conn.send_and_wait_ack(CFG_TMODE.cls, CFG_TMODE.id, payload)
-
-
-def set_mobile_mode(conn: CasicConnection) -> bool:
-    """Configure receiver for mobile/auto mode."""
-    payload = build_cfg_tmode(mode=0)  # Auto
-    return conn.send_and_wait_ack(CFG_TMODE.cls, CFG_TMODE.id, payload)
-
-
-def main() -> int:
-    """Main entry point for casictool CLI."""
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
         description="CASIC GPS receiver configuration tool",
         prog="casictool",
@@ -425,197 +121,182 @@ def main() -> int:
         help="Factory reset: restore NVM to defaults and reset receiver",
     )
 
-    args = parser.parse_args()
+    return parser.parse_args(argv)
 
+
+def validate_args(args: argparse.Namespace) -> str | None:
+    """Validate parsed arguments for mutual exclusivity.
+
+    Returns error message or None if valid.
+    """
     # Check mutual exclusivity of timing mode options
     mode_options = [args.survey, args.fixed_pos_ecef, args.mobile]
     if sum(bool(x) for x in mode_options) > 1:
-        print(
-            "Error: --survey, --fixed-pos-ecef, and --mobile are mutually exclusive",
-            file=sys.stderr,
-        )
-        return 1
+        return "--survey, --fixed-pos-ecef, and --mobile are mutually exclusive"
 
     # Check mutual exclusivity of save options
     if args.save and args.save_all:
-        print("Error: --save and --save-all are mutually exclusive", file=sys.stderr)
-        return 1
+        return "--save and --save-all are mutually exclusive"
 
     # Check mutual exclusivity of reset options
     reset_options = [args.reload, args.reset, args.factory_reset]
     if sum(bool(x) for x in reset_options) > 1:
-        print(
-            "Error: --reload, --reset, and --factory-reset are mutually exclusive",
-            file=sys.stderr,
-        )
-        return 1
+        return "--reload, --reset, and --factory-reset are mutually exclusive"
 
-    # Parse fixed position before opening connection
-    ecef = None
+    return None
+
+
+def build_job(args: argparse.Namespace) -> tuple[ConfigJob, str | None]:
+    """Build ConfigJob from parsed arguments.
+
+    Returns (job, error_message). error_message is None on success.
+    """
+    job = ConfigJob()
+
+    # Parse and set timing mode
+    if args.survey:
+        job.survey = (args.survey_time, args.survey_acc)
+
     if args.fixed_pos_ecef:
         try:
             ecef = parse_ecef_coords(args.fixed_pos_ecef)
+            job.fixed_pos = (ecef, args.fixed_pos_acc)
         except ValueError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
+            return job, str(e)
 
-    # Parse NMEA output configuration before opening connection
-    nmea_enable: list[str] = []
+    if args.mobile:
+        job.mobile = True
+
+    # Parse and set NMEA output configuration
     if args.nmea_out:
         try:
-            nmea_enable = parse_nmea_out(args.nmea_out)
+            job.nmea_enable = parse_nmea_out(args.nmea_out)
         except ValueError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
+            return job, str(e)
 
-    # Parse GNSS configuration before opening connection
-    gnss_mask: int | None = None
+    # Parse and set GNSS configuration
     if args.gnss:
         try:
-            gnss_mask = parse_gnss_arg(args.gnss)
+            job.gnss = parse_gnss_arg(args.gnss)
         except ValueError as e:
-            print(f"Error: {e}", file=sys.stderr)
-            return 1
+            return job, str(e)
 
-    # Track configuration changes for --save
-    changes = ConfigChanges()
+    # Set NVM operations
+    if args.save_all:
+        job.save_mask = CFG_MASK_ALL
+    elif args.save:
+        job.save_changes = True
 
-    # Determine if any operation requires a connection
-    has_timing_op = args.survey or args.fixed_pos_ecef or args.mobile
-    has_nmea_op = args.nmea_out is not None
-    has_gnss_op = args.gnss is not None
-    has_nvm_op = args.save or args.save_all or args.reload or args.reset or args.factory_reset
-    has_any_op = has_timing_op or has_nmea_op or has_gnss_op or has_nvm_op or args.show_config
+    if args.reload:
+        job.reload = True
+    if args.reset:
+        job.reset = True
+    if args.factory_reset:
+        job.factory_reset = True
 
-    if not has_any_op:
-        parser.print_help()
-        return 0
+    # Set show_config
+    job.show_config = args.show_config
 
+    return job, None
+
+
+def has_any_operation(job: ConfigJob) -> bool:
+    """Check if the job specifies any operations."""
+    return (
+        job.survey is not None
+        or job.fixed_pos is not None
+        or job.mobile
+        or job.gnss is not None
+        or job.nmea_enable is not None
+        or job.save_mask is not None
+        or job.save_changes
+        or job.reload
+        or job.reset
+        or job.factory_reset
+        or job.show_config
+    )
+
+
+def print_result(result: CommandResult, job: ConfigJob) -> None:
+    """Print command result to stdout/stderr."""
+    # Print operation messages
+    for msg in result.operations:
+        if msg.startswith("Warning:"):
+            print(msg, file=sys.stderr)
+        else:
+            print(msg)
+
+    # Print configuration if show_config and no other operations
+    has_config_ops = (
+        job.survey is not None
+        or job.fixed_pos is not None
+        or job.mobile
+        or job.gnss is not None
+        or job.nmea_enable is not None
+        or job.save_mask is not None
+        or job.save_changes
+        or job.reload
+        or job.reset
+        or job.factory_reset
+    )
+
+    if job.show_config and not has_config_ops:
+        if result.version:
+            print(f"CASIC receiver: {result.version.sw_version} / {result.version.hw_version}")
+        else:
+            print("CASIC receiver detected (MON-VER not supported)")
+        print()
+        if result.config_after:
+            print(result.config_after.format())
+
+
+def run_casictool(argv: list[str]) -> CommandResult:
+    """Run casictool with given arguments.
+
+    Callable from other programs. Returns structured result.
+    """
+    args = parse_args(argv)
+
+    # Validate arguments
+    error = validate_args(args)
+    if error:
+        return CommandResult(success=False, error=error)
+
+    # Build job from arguments
+    job, error = build_job(args)
+    if error:
+        return CommandResult(success=False, error=error)
+
+    # Check if any operation is requested
+    if not has_any_operation(job):
+        # Return empty result; main() will print help
+        return CommandResult(success=True, error="no_operation")
+
+    # Execute the job
     try:
         with CasicConnection(args.device, baudrate=args.speed) as conn:
-            # Probe receiver first (except for reset operations which don't need it)
-            version = None
-            if not (args.factory_reset or args.reset):
-                is_casic, version = probe_receiver(conn)
-                if not is_casic:
-                    print(
-                        "Error: No response from receiver. Not a CASIC device?",
-                        file=sys.stderr,
-                    )
-                    return 1
-
-            # Execute timing mode configuration (and track changes)
-            if args.survey:
-                if set_survey_mode(conn, args.survey_time, args.survey_acc):
-                    print(
-                        f"Survey-in mode enabled: {args.survey_time}s, "
-                        f"{args.survey_acc}m accuracy"
-                    )
-                    changes.mark_nav()
-                else:
-                    print("Error: Failed to set survey-in mode", file=sys.stderr)
-                    return 1
-
-            if ecef is not None:
-                if set_fixed_position(conn, ecef, args.fixed_pos_acc):
-                    print(
-                        f"Fixed position set: ECEF ({ecef[0]:.3f}, {ecef[1]:.3f}, {ecef[2]:.3f})"
-                    )
-                    changes.mark_nav()
-                else:
-                    print("Error: Failed to set fixed position", file=sys.stderr)
-                    return 1
-
-            if args.mobile:
-                if set_mobile_mode(conn):
-                    print("Mobile/auto mode enabled")
-                    changes.mark_nav()
-                else:
-                    print("Error: Failed to set mobile mode", file=sys.stderr)
-                    return 1
-
-            # Execute NMEA message output configuration
-            if args.nmea_out is not None:
-                enable_set = set(nmea_enable)
-                # Enable specified messages, disable all others
-                for msg_name in VALID_NMEA_MESSAGES:
-                    if msg_name in enable_set:
-                        if set_nmea_message_rate(conn, msg_name, 1):
-                            print(f"Enabled {msg_name}")
-                            changes.mark_msg()
-                        else:
-                            print(f"Error: Failed to enable {msg_name}", file=sys.stderr)
-                            return 1
-                    else:
-                        if set_nmea_message_rate(conn, msg_name, 0):
-                            print(f"Disabled {msg_name}")
-                            changes.mark_msg()
-                        else:
-                            print(f"Error: Failed to disable {msg_name}", file=sys.stderr)
-                            return 1
-
-            # Execute GNSS constellation configuration
-            if gnss_mask is not None:
-                if set_gnss(conn, gnss_mask):
-                    systems = []
-                    if gnss_mask & 0x01:
-                        systems.append("GPS")
-                    if gnss_mask & 0x02:
-                        systems.append("BDS")
-                    if gnss_mask & 0x04:
-                        systems.append("GLONASS")
-                    print(f"GNSS constellations set: {', '.join(systems)}")
-                    changes.mark_nav()  # CFG-NAVX uses CFG_MASK_RATE for save
-                else:
-                    print("Error: Failed to set GNSS constellations", file=sys.stderr)
-                    return 1
-
-            # Execute NVM save operations (after configuration changes)
-            if args.save_all:
-                if save_config(conn, CFG_MASK_ALL):
-                    print("All configuration saved to NVM")
-                else:
-                    print("Error: Failed to save configuration", file=sys.stderr)
-                    return 1
-            elif args.save:
-                if changes.mask == 0:
-                    print("Warning: No configuration changes to save")
-                else:
-                    if save_config(conn, changes.mask):
-                        print("Configuration saved to NVM")
-                    else:
-                        print("Error: Failed to save configuration", file=sys.stderr)
-                        return 1
-
-            # Execute reload/reset operations (after save)
-            if args.reload:
-                if load_config(conn, CFG_MASK_ALL):
-                    print("Configuration reloaded from NVM")
-                else:
-                    print("Error: Failed to reload configuration", file=sys.stderr)
-                    return 1
-
-            if args.factory_reset:
-                reset_receiver(conn, factory=True)
-                print("Factory reset initiated")
-
-            if args.reset:
-                reset_receiver(conn, factory=False)
-                print("Cold start reset initiated")
-
-            # Show configuration (only if no other operations)
-            if args.show_config and not has_timing_op and not has_nmea_op and not has_gnss_op and not has_nvm_op:
-                if version:
-                    print(f"CASIC receiver: {version.sw_version} / {version.hw_version}")
-                else:
-                    print("CASIC receiver detected (MON-VER not supported)")
-                print()
-                config = show_config(conn)
-                print(config.format())
-
+            return execute_job(conn, job)
     except serial.SerialException as e:
-        print(f"Error: {e}", file=sys.stderr)
+        return CommandResult(success=False, error=str(e))
+
+
+def main() -> int:
+    """CLI entry point."""
+    result = run_casictool(sys.argv[1:])
+
+    if result.error == "no_operation":
+        # Print help when no operation specified
+        parse_args(["--help"])
+        return 0
+
+    if not result.success:
+        print(f"Error: {result.error}", file=sys.stderr)
         return 1
+
+    # Build job again to check show_config flag for printing
+    args = parse_args(sys.argv[1:])
+    job, _ = build_job(args)
+    print_result(result, job)
 
     return 0
 

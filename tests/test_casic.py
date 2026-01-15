@@ -56,7 +56,7 @@ from casic import (
     parse_cfg_tp,
     parse_msg,
 )
-from casictool import ConfigChanges, parse_gnss_arg, parse_nmea_out
+from job import ConfigChanges, parse_gnss_arg, parse_nmea_out
 
 
 class TestMsgID:

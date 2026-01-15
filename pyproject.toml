@@ -24,7 +24,7 @@ dev = [
 casictool = "casictool:main"
 
 [tool.setuptools]
-py-modules = ["casictool", "casic"]
+py-modules = ["casictool", "casic", "job"]
 
 [tool.mypy]
 strict = true

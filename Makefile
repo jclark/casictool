@@ -1,4 +1,4 @@
-SRC_FILES = casictool.py casic.py
+SRC_FILES = casictool.py casic.py job.py
 
 dev-deps:
 	.venv/bin/pip install -e ".[dev]"
