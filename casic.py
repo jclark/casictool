@@ -754,6 +754,20 @@ def build_cfg_msg_query(msg_cls: int, msg_id: int) -> bytes:
     return struct.pack("<BB", msg_cls, msg_id)
 
 
+def build_cfg_msg_set(msg_cls: int, msg_id: int, rate: int) -> bytes:
+    """Build CFG-MSG SET payload (4 bytes).
+
+    Args:
+        msg_cls: Message class to configure
+        msg_id: Message ID within class
+        rate: Output rate (0=off, 1=every fix, N=every N fixes)
+
+    Returns:
+        4-byte payload: [cls(U1)][id(U1)][rate(U2)]
+    """
+    return struct.pack("<BBH", msg_cls, msg_id, rate)
+
+
 def parse_cfg_msg(payload: bytes) -> int:
     """Parse CFG-MSG response payload (4 bytes).
 

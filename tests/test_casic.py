@@ -2,6 +2,8 @@
 
 import struct
 
+import pytest
+
 from casic import (
     ACK_ACK,
     ACK_NAK,
@@ -42,6 +44,7 @@ from casic import (
     TimePulseConfig,
     TimingModeConfig,
     build_cfg_cfg,
+    build_cfg_msg_set,
     build_cfg_rst,
     calc_checksum,
     pack_msg,
@@ -52,6 +55,7 @@ from casic import (
     parse_cfg_tp,
     parse_msg,
 )
+from casictool import ConfigChanges, parse_nmea_out
 
 
 class TestMsgID:
@@ -465,3 +469,90 @@ class TestBuildCfgRst:
         payload = build_cfg_rst(BBR_NAV_DATA, reset_mode=0, start_mode=2)
         nav_bbr_mask, reset_mode, start_mode = struct.unpack("<HBB", payload)
         assert reset_mode == 0  # HW immediate
+
+
+class TestBuildCfgMsgSet:
+    def test_enable_gga_rate_1(self) -> None:
+        """Test CFG-MSG SET payload for enabling GGA at rate 1."""
+        payload = build_cfg_msg_set(0x4E, 0x00, 1)
+        assert payload == bytes([0x4E, 0x00, 0x01, 0x00])
+
+    def test_disable_rmc(self) -> None:
+        """Test CFG-MSG SET payload for disabling RMC."""
+        payload = build_cfg_msg_set(0x4E, 0x04, 0)
+        assert payload == bytes([0x4E, 0x04, 0x00, 0x00])
+
+    def test_enable_gsv_rate_5(self) -> None:
+        """Test CFG-MSG SET payload for enabling GSV at rate 5."""
+        payload = build_cfg_msg_set(0x4E, 0x03, 5)
+        assert payload == bytes([0x4E, 0x03, 0x05, 0x00])
+
+    def test_payload_structure(self) -> None:
+        """Test payload is correctly structured as [cls][id][rate(U2)]."""
+        payload = build_cfg_msg_set(0x4E, 0x08, 10)
+        assert len(payload) == 4
+        cls_id, msg_id, rate = struct.unpack("<BBH", payload)
+        assert cls_id == 0x4E
+        assert msg_id == 0x08
+        assert rate == 10
+
+
+class TestParseNmeaOut:
+    def test_basic(self) -> None:
+        """Test parsing messages to enable."""
+        enable = parse_nmea_out("GGA,RMC,ZDA")
+        assert enable == ["GGA", "RMC", "ZDA"]
+
+    def test_case_insensitive(self) -> None:
+        """Test case insensitivity."""
+        enable = parse_nmea_out("gga,Rmc,zda")
+        assert enable == ["GGA", "RMC", "ZDA"]
+
+    def test_whitespace_handling(self) -> None:
+        """Test whitespace is trimmed."""
+        enable = parse_nmea_out(" GGA , RMC , ZDA ")
+        assert enable == ["GGA", "RMC", "ZDA"]
+
+    def test_empty_items_ignored(self) -> None:
+        """Test empty items in comma list are ignored."""
+        enable = parse_nmea_out("GGA,,RMC,")
+        assert enable == ["GGA", "RMC"]
+
+    def test_invalid_message(self) -> None:
+        """Test invalid message name raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown NMEA message: INVALID"):
+            parse_nmea_out("GGA,INVALID")
+
+    def test_all_valid_messages(self) -> None:
+        """Test all valid message names are accepted."""
+        enable = parse_nmea_out("GGA,GLL,GSA,GSV,RMC,VTG,ZDA")
+        assert enable == ["GGA", "GLL", "GSA", "GSV", "RMC", "VTG", "ZDA"]
+
+
+class TestConfigChangesMarkMsg:
+    def test_initial_mask_zero(self) -> None:
+        """Test ConfigChanges starts with zero mask."""
+        changes = ConfigChanges()
+        assert changes.mask == 0
+
+    def test_mark_msg(self) -> None:
+        """Test mark_msg sets CFG_MASK_MSG bit."""
+        changes = ConfigChanges()
+        changes.mark_msg()
+        assert changes.mask & CFG_MASK_MSG != 0
+
+    def test_mark_msg_multiple_calls(self) -> None:
+        """Test mark_msg is idempotent."""
+        changes = ConfigChanges()
+        changes.mark_msg()
+        changes.mark_msg()
+        assert changes.mask == CFG_MASK_MSG
+
+    def test_mark_msg_and_rate(self) -> None:
+        """Test mark_msg and mark_rate can both be set."""
+        changes = ConfigChanges()
+        changes.mark_rate()
+        changes.mark_msg()
+        assert changes.mask & CFG_MASK_MSG != 0
+        assert changes.mask & CFG_MASK_RATE != 0
+        assert changes.mask == (CFG_MASK_MSG | CFG_MASK_RATE)

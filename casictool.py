@@ -13,6 +13,7 @@ from casic import (
     BBR_NAV_DATA,
     CFG_CFG,
     CFG_MASK_ALL,
+    CFG_MASK_MSG,
     CFG_MASK_RATE,
     CFG_MSG,
     CFG_NAVX,
@@ -28,6 +29,7 @@ from casic import (
     ReceiverConfig,
     VersionInfo,
     build_cfg_cfg,
+    build_cfg_msg_set,
     build_cfg_rst,
     build_cfg_tmode,
     parse_cfg_msg,
@@ -49,6 +51,10 @@ class ConfigChanges:
     def mark_rate(self) -> None:
         """Mark rate/timing mode configuration as changed."""
         self.mask |= CFG_MASK_RATE
+
+    def mark_msg(self) -> None:
+        """Mark message output configuration as changed."""
+        self.mask |= CFG_MASK_MSG
 
 
 def save_config(conn: CasicConnection, mask: int) -> bool:
@@ -126,6 +132,27 @@ def query_nmea_rates(conn: CasicConnection) -> MessageRatesConfig:
     return MessageRatesConfig(rates=rates)
 
 
+def set_nmea_message_rate(conn: CasicConnection, message_name: str, rate: int) -> bool:
+    """Set output rate for a specific NMEA message.
+
+    Args:
+        conn: Active CASIC connection
+        message_name: NMEA message name (GGA, RMC, etc.)
+        rate: Output rate (0=disable, 1+=enable at rate)
+
+    Returns:
+        True if acknowledged, False on failure
+    """
+    # Lookup message ID from name
+    nmea_lookup = {name: msg for name, msg in NMEA_MESSAGES}
+    msg = nmea_lookup.get(message_name.upper())
+    if msg is None:
+        return False
+
+    payload = build_cfg_msg_set(msg.cls, msg.id, rate)
+    return conn.send_and_wait_ack(CFG_MSG.cls, CFG_MSG.id, payload)
+
+
 def show_config(conn: CasicConnection) -> ReceiverConfig:
     """Query all CFG messages and return receiver configuration."""
     config = ReceiverConfig()
@@ -167,6 +194,32 @@ def parse_ecef_coords(coord_str: str) -> tuple[float, float, float]:
     if len(parts) != 3:
         raise ValueError("ECEF coordinates must be X,Y,Z (3 values)")
     return (float(parts[0].strip()), float(parts[1].strip()), float(parts[2].strip()))
+
+
+VALID_NMEA_MESSAGES = {"GGA", "GLL", "GSA", "GSV", "RMC", "VTG", "ZDA"}
+
+
+def parse_nmea_out(nmea_str: str) -> list[str]:
+    """Parse --nmea-out argument into list of messages to enable.
+
+    Args:
+        nmea_str: Comma-separated message list (e.g., "GGA,RMC,ZDA")
+
+    Returns:
+        List of message names to enable (all others will be disabled)
+    """
+    enable = []
+
+    for item in nmea_str.split(","):
+        item = item.strip().upper()
+        if not item:
+            continue
+        if item in VALID_NMEA_MESSAGES:
+            enable.append(item)
+        else:
+            raise ValueError(f"Unknown NMEA message: {item}")
+
+    return enable
 
 
 def set_survey_mode(conn: CasicConnection, min_dur: int, acc: float) -> bool:
@@ -252,6 +305,16 @@ def main() -> int:
         "--mobile", action="store_true", help="Enable mobile/auto mode (disable timing mode)"
     )
 
+    # NMEA message output group
+    nmea_group = parser.add_argument_group("NMEA Message Output")
+    nmea_group.add_argument(
+        "--nmea-out",
+        type=str,
+        metavar="MSGS",
+        help="Set NMEA message output. Comma-separated list of messages to enable "
+        "(GGA,GLL,GSA,GSV,RMC,VTG,ZDA). Messages not listed will be disabled.",
+    )
+
     # NVM operations group
     nvm_group = parser.add_argument_group("Configuration Storage")
     nvm_group.add_argument(
@@ -314,13 +377,23 @@ def main() -> int:
             print(f"Error: {e}", file=sys.stderr)
             return 1
 
+    # Parse NMEA output configuration before opening connection
+    nmea_enable: list[str] = []
+    if args.nmea_out:
+        try:
+            nmea_enable = parse_nmea_out(args.nmea_out)
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
     # Track configuration changes for --save
     changes = ConfigChanges()
 
     # Determine if any operation requires a connection
     has_timing_op = args.survey or args.fixed_pos_ecef or args.mobile
+    has_nmea_op = args.nmea_out is not None
     has_nvm_op = args.save or args.save_all or args.reload or args.reset or args.factory_reset
-    has_any_op = has_timing_op or has_nvm_op or args.show_config
+    has_any_op = has_timing_op or has_nmea_op or has_nvm_op or args.show_config
 
     if not has_any_op:
         parser.print_help()
@@ -369,6 +442,26 @@ def main() -> int:
                     print("Error: Failed to set mobile mode", file=sys.stderr)
                     return 1
 
+            # Execute NMEA message output configuration
+            if args.nmea_out is not None:
+                enable_set = set(nmea_enable)
+                # Enable specified messages, disable all others
+                for msg_name in VALID_NMEA_MESSAGES:
+                    if msg_name in enable_set:
+                        if set_nmea_message_rate(conn, msg_name, 1):
+                            print(f"Enabled {msg_name}")
+                            changes.mark_msg()
+                        else:
+                            print(f"Error: Failed to enable {msg_name}", file=sys.stderr)
+                            return 1
+                    else:
+                        if set_nmea_message_rate(conn, msg_name, 0):
+                            print(f"Disabled {msg_name}")
+                            changes.mark_msg()
+                        else:
+                            print(f"Error: Failed to disable {msg_name}", file=sys.stderr)
+                            return 1
+
             # Execute NVM save operations (after configuration changes)
             if args.save_all:
                 if save_config(conn, CFG_MASK_ALL):
@@ -403,7 +496,7 @@ def main() -> int:
                 print("Cold start reset initiated")
 
             # Show configuration (only if no other operations)
-            if args.show_config and not has_timing_op and not has_nvm_op:
+            if args.show_config and not has_timing_op and not has_nmea_op and not has_nvm_op:
                 if version:
                     print(f"CASIC receiver: {version.sw_version} / {version.hw_version}")
                 else:
