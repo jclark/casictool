@@ -60,14 +60,17 @@ class TestMsgID:
 
 class TestChecksum:
     def test_empty_payload(self) -> None:
+        # ckSum = (id << 24) + (class << 16) + len = (0x00 << 24) + (0x06 << 16) + 0
         ck = calc_checksum(0x06, 0x00, b"")
         assert ck == 0x00060000
 
     def test_4byte_payload(self) -> None:
+        # ckSum = (0x05 << 24) + (0x06 << 16) + 4 + 0x04030201 = 0x09090205
         ck = calc_checksum(0x06, 0x05, bytes([0x01, 0x02, 0x03, 0x04]))
         assert ck == 0x09090205
 
     def test_partial_word_payload(self) -> None:
+        # ckSum = (0x01 << 24) + (0x06 << 16) + 2 + 0x0000CDAB = 0x0106CDAD
         ck = calc_checksum(0x06, 0x01, bytes([0xAB, 0xCD]))
         assert ck == 0x0106CDAD
 
@@ -92,6 +95,7 @@ class TestPackMsg:
 
     def test_pack_checksum_placement(self) -> None:
         msg = pack_msg(0x06, 0x00, b"")
+        # 0x00060000 in little-endian
         expected_checksum = bytes([0x00, 0x00, 0x06, 0x00])
         assert msg[6:10] == expected_checksum
 

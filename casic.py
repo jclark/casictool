@@ -52,6 +52,9 @@ class MsgID:
 ACK_NAK = MsgID(CLS_ACK, 0x00)
 ACK_ACK = MsgID(CLS_ACK, 0x01)
 
+# MON messages
+MON_VER = MsgID(CLS_MON, 0x04)
+
 # CFG messages
 CFG_PRT = MsgID(CLS_CFG, 0x00)
 CFG_MSG = MsgID(CLS_CFG, 0x01)
@@ -123,6 +126,22 @@ def parse_msg(data: bytes) -> tuple[MsgID, bytes] | None:
     return MsgID(cls, id), payload
 
 
+@dataclass
+class PollResult:
+    """Result of a poll operation."""
+
+    payload: bytes | None
+    nak: bool = False
+
+    @property
+    def success(self) -> bool:
+        return self.payload is not None
+
+    @property
+    def timeout(self) -> bool:
+        return self.payload is None and not self.nak
+
+
 class CasicConnection:
     """Serial connection with CASIC protocol handling."""
 
@@ -131,6 +150,7 @@ class CasicConnection:
         self.baudrate = baudrate
         self.timeout = timeout
         self._serial: Serial = serial.Serial(port, baudrate=baudrate, timeout=timeout)
+        self._serial.reset_input_buffer()
 
     def close(self) -> None:
         self._serial.close()
@@ -214,8 +234,14 @@ class CasicConnection:
 
         return False
 
-    def poll(self, cls: int, id: int, timeout: float = 2.0) -> bytes | None:
-        """Send query (empty payload) and wait for response."""
+    def poll(self, cls: int, id: int, timeout: float = 2.0) -> PollResult:
+        """Send query (empty payload) and wait for response.
+
+        Returns PollResult with:
+        - payload set on success
+        - nak=True if receiver rejected the query
+        - both None/False on timeout
+        """
         self.send(cls, id, b"")
 
         start_time = time.monotonic()
@@ -225,10 +251,39 @@ class CasicConnection:
                 continue
 
             msg_id, payload = result
-            if msg_id.cls == cls and msg_id.id == id:
-                return payload
 
-        return None
+            # Check for NAK response to our query
+            if msg_id == ACK_NAK and len(payload) >= 2:
+                if payload[0] == cls and payload[1] == id:
+                    return PollResult(None, nak=True)
+
+            # Check for the actual response
+            if msg_id.cls == cls and msg_id.id == id:
+                return PollResult(payload)
+
+        return PollResult(None)
+
+
+# ============================================================================
+# Monitor Dataclasses
+# ============================================================================
+
+
+@dataclass
+class VersionInfo:
+    """MON-VER response: software and hardware version."""
+
+    sw_version: str
+    hw_version: str
+
+
+def parse_mon_ver(payload: bytes) -> VersionInfo:
+    """Parse MON-VER response payload (64 bytes)."""
+    if len(payload) < 64:
+        raise ValueError(f"MON-VER payload too short: {len(payload)} bytes, expected 64")
+    sw_version = payload[0:32].rstrip(b"\x00").decode("ascii", errors="replace")
+    hw_version = payload[32:64].rstrip(b"\x00").decode("ascii", errors="replace")
+    return VersionInfo(sw_version=sw_version, hw_version=hw_version)
 
 
 # ============================================================================

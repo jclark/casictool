@@ -14,14 +14,31 @@ from casic import (
     CFG_RATE,
     CFG_TMODE,
     CFG_TP,
+    MON_VER,
     CasicConnection,
     ReceiverConfig,
+    VersionInfo,
     parse_cfg_navx,
     parse_cfg_prt,
     parse_cfg_rate,
     parse_cfg_tmode,
     parse_cfg_tp,
+    parse_mon_ver,
 )
+
+
+def probe_receiver(conn: CasicConnection) -> tuple[bool, VersionInfo | None]:
+    """Probe receiver with MON-VER to verify it's a CASIC device.
+
+    Returns (is_casic, version_info). A NAK response proves it's CASIC
+    even if MON-VER isn't supported.
+    """
+    result = conn.poll(MON_VER.cls, MON_VER.id)
+    if result.success:
+        return True, parse_mon_ver(result.payload)  # type: ignore[arg-type]
+    if result.nak:
+        return True, None  # NAK proves it's CASIC
+    return False, None  # Timeout - not CASIC
 
 
 def show_config(conn: CasicConnection) -> ReceiverConfig:
@@ -29,39 +46,29 @@ def show_config(conn: CasicConnection) -> ReceiverConfig:
     config = ReceiverConfig()
 
     # Query CFG-PRT
-    payload = conn.poll(CFG_PRT.cls, CFG_PRT.id)
-    if payload is not None:
-        config.port = parse_cfg_prt(payload)
-    else:
-        print("Warning: CFG-PRT query timed out", file=sys.stderr)
+    result = conn.poll(CFG_PRT.cls, CFG_PRT.id)
+    if result.success:
+        config.port = parse_cfg_prt(result.payload)  # type: ignore[arg-type]
 
     # Query CFG-RATE
-    payload = conn.poll(CFG_RATE.cls, CFG_RATE.id)
-    if payload is not None:
-        config.rate = parse_cfg_rate(payload)
-    else:
-        print("Warning: CFG-RATE query timed out", file=sys.stderr)
+    result = conn.poll(CFG_RATE.cls, CFG_RATE.id)
+    if result.success:
+        config.rate = parse_cfg_rate(result.payload)  # type: ignore[arg-type]
 
     # Query CFG-TP
-    payload = conn.poll(CFG_TP.cls, CFG_TP.id)
-    if payload is not None:
-        config.time_pulse = parse_cfg_tp(payload)
-    else:
-        print("Warning: CFG-TP query timed out", file=sys.stderr)
+    result = conn.poll(CFG_TP.cls, CFG_TP.id)
+    if result.success:
+        config.time_pulse = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
 
     # Query CFG-TMODE
-    payload = conn.poll(CFG_TMODE.cls, CFG_TMODE.id)
-    if payload is not None:
-        config.timing_mode = parse_cfg_tmode(payload)
-    else:
-        print("Warning: CFG-TMODE query timed out", file=sys.stderr)
+    result = conn.poll(CFG_TMODE.cls, CFG_TMODE.id)
+    if result.success:
+        config.timing_mode = parse_cfg_tmode(result.payload)  # type: ignore[arg-type]
 
     # Query CFG-NAVX
-    payload = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
-    if payload is not None:
-        config.nav_engine = parse_cfg_navx(payload)
-    else:
-        print("Warning: CFG-NAVX query timed out", file=sys.stderr)
+    result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
+    if result.success:
+        config.nav_engine = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
 
     return config
 
@@ -88,6 +95,16 @@ def main() -> int:
     if args.show_config:
         try:
             with CasicConnection(args.device, baudrate=args.speed) as conn:
+                # Probe receiver first
+                is_casic, version = probe_receiver(conn)
+                if not is_casic:
+                    print("Error: No response from receiver. Not a CASIC device?", file=sys.stderr)
+                    return 1
+                if version:
+                    print(f"CASIC receiver: {version.sw_version} / {version.hw_version}")
+                else:
+                    print("CASIC receiver detected (MON-VER not supported)")
+                print()
                 config = show_config(conn)
                 print(config.format())
         except serial.SerialException as e:
