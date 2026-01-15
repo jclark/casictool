@@ -22,7 +22,7 @@ The virtual environment is in `.venv/`. Use `.venv/bin/python` or `.venv/bin/pip
 
 A GPS receiver is available for testing:
 - Device: `/dev/ttyUSB0`
-- Baud rate: 9600
+- Baud rate: 38400
 
 ## Documentation
 
