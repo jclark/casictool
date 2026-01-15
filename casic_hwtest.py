@@ -72,6 +72,23 @@ def verify(conn: CasicConnection, props: ConfigProps) -> TestResult:
     return Pass()
 
 
+def wait_for_restart(conn: CasicConnection) -> bool:
+    """Wait for receiver to restart after reset.
+
+    Returns True if receiver came back, False if 30 second timeout.
+    """
+    conn._serial.reset_input_buffer()
+    start = time.monotonic()
+    while True:
+        elapsed = time.monotonic() - start
+        if elapsed > 30:
+            return False
+        if conn._serial.read(100) and elapsed > 2:
+            time.sleep(2)
+            conn._serial.reset_input_buffer()
+            return True
+
+
 def verify_persist(
     conn: CasicConnection, props: ConfigProps, alt_props: ConfigProps
 ) -> TestResult:
@@ -113,10 +130,12 @@ def verify_persist(
     return Pass()
 
 
-# Factory defaults (to be verified on hardware)
+# Factory defaults (verified on hardware)
 FACTORY_DEFAULTS: ConfigProps = {
-    "gnss": {GNSS.GPS, GNSS.BDS, GNSS.GLO},
+    "gnss": {GNSS.GPS, GNSS.BDS},
     "time_mode": MobileMode(),
+    "time_pulse": TimePulse(period=1.0, width=0.1, time_gnss=GNSS.GPS),
+    "nmea_out": nmea_rates(GGA=1, GLL=1, GSA=1, GSV=1, RMC=1, VTG=1, ZDA=1),
 }
 
 
@@ -127,7 +146,8 @@ def verify_factory_reset(conn: CasicConnection) -> TestResult:
     execute_job(conn, job, log_file=sys.stderr)
 
     # Wait for receiver to restart
-    time.sleep(2)
+    if not wait_for_restart(conn):
+        return Fail({"restart": {"expected": "receiver response", "actual": "timeout"}})
 
     # Query actual config
     actual = query_config_props(conn)
