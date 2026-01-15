@@ -658,14 +658,14 @@ class TestParseGnssArg:
         with pytest.raises(ValueError, match="Unknown constellation"):
             parse_gnss_arg("INVALID")
 
-    def test_unsupported_galileo(self) -> None:
-        """Test Galileo raises specific unsupported error."""
-        with pytest.raises(ValueError, match="Unsupported constellation.*GAL"):
-            parse_gnss_arg("GAL")
+    def test_supported_galileo(self) -> None:
+        """Test Galileo is supported."""
+        assert parse_gnss_arg("GAL") == {GNSS.GAL}
+        assert parse_gnss_arg("GALILEO") == {GNSS.GAL}
 
-    def test_unsupported_qzss(self) -> None:
-        """Test QZSS raises specific unsupported error."""
-        with pytest.raises(ValueError, match="Unsupported constellation.*QZSS"):
+    def test_unknown_qzss(self) -> None:
+        """Test QZSS raises unknown constellation error."""
+        with pytest.raises(ValueError, match="Unknown constellation.*QZSS"):
             parse_gnss_arg("QZSS")
 
     def test_empty_string(self) -> None:

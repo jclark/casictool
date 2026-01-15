@@ -98,12 +98,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     # GNSS constellation group
     gnss_group = parser.add_argument_group("GNSS Configuration")
     gnss_group.add_argument(
+        "-g",
         "--gnss",
         type=str,
         metavar="SYSTEMS",
-        help="Enable GNSS constellations (GPS,BDS,GLO). "
+        help="Enable GNSS constellations (GPS,GAL,BDS,GLO). "
         "Disables constellations not listed. "
-        "Note: GAL, QZSS, NAVIC, SBAS not supported by this receiver.",
+        "Note: QZSS, NAVIC, SBAS not supported by this receiver.",
     )
 
     # Time pulse (PPS) group
@@ -118,7 +119,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--time-gnss",
         type=str,
         metavar="SYSTEM",
-        help="Set PPS time source (GPS, BDS, GLO)",
+        help="Set PPS time source (GPS, GAL, BDS, GLO)",
     )
 
     # NVM operations group
@@ -174,9 +175,7 @@ def validate_args(args: argparse.Namespace) -> str | None:
     return None
 
 
-VALID_GNSS = {"GPS", "BDS", "GLO", "GLN", "GLONASS"}
-UNSUPPORTED_GNSS = {"GAL", "GALILEO", "QZSS", "NAVIC", "SBAS"}
-VALID_TIME_GNSS = {"GPS", "BDS", "GLO", "GLONASS"}
+VALID_GNSS = {"GPS", "GAL", "GALILEO", "BDS", "GLO", "GLN", "GLONASS"}
 
 
 def parse_gnss_arg(gnss_str: str) -> set[GNSS]:
@@ -197,16 +196,13 @@ def parse_gnss_arg(gnss_str: str) -> set[GNSS]:
         item = item.strip().upper()
         if not item:
             continue
-        if item in UNSUPPORTED_GNSS:
-            raise ValueError(
-                f"Unsupported constellation: {item}. "
-                "This receiver only supports GPS, BDS, and GLONASS."
-            )
         if item not in VALID_GNSS:
             raise ValueError(f"Unknown constellation: {item}")
 
         if item == "GPS":
             result.add(GNSS.GPS)
+        elif item in ("GAL", "GALILEO"):
+            result.add(GNSS.GAL)
         elif item == "BDS":
             result.add(GNSS.BDS)
         elif item in ("GLO", "GLN", "GLONASS"):
@@ -254,8 +250,10 @@ def parse_time_gnss_arg(system: str) -> GNSS:
     system = system.strip().upper()
     if system == "GLONASS":
         system = "GLO"
-    if system not in {"GPS", "BDS", "GLO"}:
-        raise ValueError(f"Unknown time source: {system}. Use GPS, BDS, or GLO.")
+    elif system == "GALILEO":
+        system = "GAL"
+    if system not in {"GPS", "GAL", "BDS", "GLO"}:
+        raise ValueError(f"Unknown time source: {system}. Use GPS, GAL, BDS, or GLO.")
     return GNSS(system)
 
 
