@@ -65,6 +65,26 @@ CFG_CFG = MsgID(CLS_CFG, 0x05)
 CFG_TMODE = MsgID(CLS_CFG, 0x06)
 CFG_NAVX = MsgID(CLS_CFG, 0x07)
 
+# NMEA message IDs (Class 0x4E)
+NMEA_GGA = MsgID(CLS_NMEA, 0x00)
+NMEA_GLL = MsgID(CLS_NMEA, 0x01)
+NMEA_GSA = MsgID(CLS_NMEA, 0x02)
+NMEA_GSV = MsgID(CLS_NMEA, 0x03)
+NMEA_RMC = MsgID(CLS_NMEA, 0x04)
+NMEA_VTG = MsgID(CLS_NMEA, 0x05)
+NMEA_ZDA = MsgID(CLS_NMEA, 0x08)
+
+# List of standard NMEA messages to query
+NMEA_MESSAGES: list[tuple[str, MsgID]] = [
+    ("GGA", NMEA_GGA),
+    ("GLL", NMEA_GLL),
+    ("GSA", NMEA_GSA),
+    ("GSV", NMEA_GSV),
+    ("RMC", NMEA_RMC),
+    ("VTG", NMEA_VTG),
+    ("ZDA", NMEA_ZDA),
+]
+
 # Mask bits for CFG-CFG (configuration sections)
 CFG_MASK_PORT = 0x0001  # B0: CFG-PRT
 CFG_MASK_MSG = 0x0002  # B1: CFG-MSG
@@ -391,6 +411,21 @@ class RateConfig:
 
 
 @dataclass
+class MessageRatesConfig:
+    """CFG-MSG responses: NMEA message output rates."""
+
+    rates: dict[str, int]  # message name -> rate (0=off, 1=every fix, N=every N fixes)
+
+    def format(self) -> str:
+        if not self.rates:
+            return "NMEA messages: (not queried)"
+        enabled = [name for name, rate in self.rates.items() if rate > 0]
+        if enabled:
+            return f"NMEA messages enabled: {', '.join(enabled)}"
+        return "NMEA messages enabled: (none)"
+
+
+@dataclass
 class TimePulseConfig:
     """CFG-TP response: PPS/time pulse configuration."""
 
@@ -542,6 +577,7 @@ class ReceiverConfig:
 
     port: PortConfig | None = None
     rate: RateConfig | None = None
+    message_rates: MessageRatesConfig | None = None
     time_pulse: TimePulseConfig | None = None
     timing_mode: TimingModeConfig | None = None
     nav_engine: NavEngineConfig | None = None
@@ -556,6 +592,8 @@ class ReceiverConfig:
             sections.append(self.timing_mode.format())
         if self.rate is not None:
             sections.append(self.rate.format())
+        if self.message_rates is not None:
+            sections.append(self.message_rates.format())
         if self.port is not None:
             sections.append(self.port.format())
         return "\n".join(sections)
@@ -704,6 +742,27 @@ def parse_cfg_navx(payload: bytes) -> NavEngineConfig:
         t_acc=t_acc,
         static_hold_th=static_hold_th,
     )
+
+
+def build_cfg_msg_query(msg_cls: int, msg_id: int) -> bytes:
+    """Build CFG-MSG query payload to query a specific message's rate.
+
+    Args:
+        msg_cls: Class ID of the message to query
+        msg_id: Message ID of the message to query
+    """
+    return struct.pack("<BB", msg_cls, msg_id)
+
+
+def parse_cfg_msg(payload: bytes) -> int:
+    """Parse CFG-MSG response payload (4 bytes).
+
+    Returns the output rate for the queried message.
+    """
+    if len(payload) < 4:
+        raise ValueError(f"CFG-MSG payload too short: {len(payload)} bytes, expected 4")
+    _cls_id, _msg_id, rate = struct.unpack("<BBH", payload[:4])
+    return int(rate)
 
 
 def build_cfg_cfg(mask: int, mode: int) -> bytes:

@@ -14,6 +14,7 @@ from casic import (
     CFG_CFG,
     CFG_MASK_ALL,
     CFG_MASK_RATE,
+    CFG_MSG,
     CFG_NAVX,
     CFG_PRT,
     CFG_RATE,
@@ -21,12 +22,15 @@ from casic import (
     CFG_TMODE,
     CFG_TP,
     MON_VER,
+    NMEA_MESSAGES,
     CasicConnection,
+    MessageRatesConfig,
     ReceiverConfig,
     VersionInfo,
     build_cfg_cfg,
     build_cfg_rst,
     build_cfg_tmode,
+    parse_cfg_msg,
     parse_cfg_navx,
     parse_cfg_prt,
     parse_cfg_rate,
@@ -95,6 +99,33 @@ def probe_receiver(conn: CasicConnection) -> tuple[bool, VersionInfo | None]:
     return False, None  # Timeout - not CASIC
 
 
+def query_nmea_rates(conn: CasicConnection) -> MessageRatesConfig:
+    """Query NMEA message output rates via CFG-MSG.
+
+    CFG-MSG query with empty payload returns all configured message rates.
+    Each response is 4 bytes: cls, id, rate (U2).
+    """
+    # Build lookup from (cls, id) -> name for NMEA messages we care about
+    nmea_lookup = {(msg.cls, msg.id): name for name, msg in NMEA_MESSAGES}
+
+    rates: dict[str, int] = {}
+    conn.send(CFG_MSG.cls, CFG_MSG.id, b"")
+
+    # Collect all CFG-MSG responses
+    while True:
+        result = conn.receive(timeout=0.3)
+        if result is None:
+            break
+        recv_id, recv_payload = result
+        if recv_id.cls == CFG_MSG.cls and recv_id.id == CFG_MSG.id and len(recv_payload) >= 4:
+            msg_cls, msg_id, rate = recv_payload[0], recv_payload[1], parse_cfg_msg(recv_payload)
+            name = nmea_lookup.get((msg_cls, msg_id))
+            if name:
+                rates[name] = rate
+
+    return MessageRatesConfig(rates=rates)
+
+
 def show_config(conn: CasicConnection) -> ReceiverConfig:
     """Query all CFG messages and return receiver configuration."""
     config = ReceiverConfig()
@@ -108,6 +139,9 @@ def show_config(conn: CasicConnection) -> ReceiverConfig:
     result = conn.poll(CFG_RATE.cls, CFG_RATE.id)
     if result.success:
         config.rate = parse_cfg_rate(result.payload)  # type: ignore[arg-type]
+
+    # Query NMEA message rates via CFG-MSG
+    config.message_rates = query_nmea_rates(conn)
 
     # Query CFG-TP
     result = conn.poll(CFG_TP.cls, CFG_TP.id)
