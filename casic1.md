@@ -408,18 +408,7 @@ Specific content is detailed in the subsequent NMEA sentence introduction in Sec
 | **Description** | Product Information |
 | **Type** | Output, output once at startup |
 | **Format** | `$GPTXT, xx, yy, zz, info*hh<CR><LF>` |
-| **Examples** | `$GPTXT,01,01,02,MA=CASIC*27` (Manufacturer Name) <br>
-
-<br> `$GPTXT,01,01,02,IC=ATGB03+ATGR201*71` (Chip model) <br>
-
-<br> `$GPTXT,01,01,02,SW=URANUS2,V2.2.1.0*1D` (Software name/version) <br>
-
-<br> `$GPTXT,01,01,02,TB=2013-06-20,13:02:49*43` (Compile time) <br>
-
-<br> `$GPTXT,01,01,02,MO=GB*77` (Startup mode, GB=GPS+BDS) <br>
-
-<br> `$GPTXT,01,01,02,CI=00000000*7A` (Customer ID) |
-
+| **Examples** | `$GPTXT,01,01,02,MA=CASIC*27` (Manufacturer Name) <br> <br> `$GPTXT,01,01,02,IC=ATGB03+ATGR201*71` (Chip model) <br> <br> `$GPTXT,01,01,02,SW=URANUS2,V2.2.1.0*1D` (Software name/version) <br> <br> `$GPTXT,01,01,02,TB=2013-06-20,13:02:49*43` (Compile time) <br> <br> `$GPTXT,01,01,02,MO=GB*77` (Startup mode, GB=GPS+BDS) <br> <br> `$GPTXT,01,01,02,CI=00000000*7A` (Customer ID) |
 **Parameter Description**
 
 | Field | Name | Format | Parameter Description |
@@ -439,12 +428,7 @@ Specific content is detailed in the subsequent NMEA sentence introduction in Sec
 | **Description** | Antenna Status |
 | **Type** | Output |
 | **Format** | `$GPTXT, xx, yy, zz, info*hh<CR><LF>` |
-| **Example** | `$GPTXT,01,01,01,ANTENNA OPEN*25` (Open) <br>
-
-<br> `$GPTXT,01,01,01,ANTENNA OK*35` (Good) <br>
-
-<br> `$GPTXT,01,01,01,ANTENNA SHORT*63` (Short) |
-
+| **Example** | `$GPTXT,01,01,01,ANTENNA OPEN*25` (Open) <br> <br> `$GPTXT,01,01,01,ANTENNA OK*35` (Good) <br> <br> `$GPTXT,01,01,01,ANTENNA SHORT*63` (Short) |
 **Parameter Description**
 
 | Field | Name | Format | Parameter Description |
@@ -634,9 +618,7 @@ Specific content is detailed in the subsequent NMEA sentence introduction in Sec
 | Field | Name | Format | Parameter Description |
 | --- | --- | --- | --- |
 | 1 | `$PCAS01` | String | Message ID |
-| 2 | `br` | Numeric | Baud rate configuration: <br>
-
-<br> 0=4800, 1=9600, 2=19200, 3=38400, 4=57600, 5=115200 |
+| 2 | `br` | Numeric | Baud rate configuration: <br> <br> 0=4800, 1=9600, 2=19200, 3=38400, 4=57600, 5=115200 |
 | 3 | `CS` | Hex Numeric | Checksum |
 | 4 | `<CR><LF>` | Character | Carriage Return and Line Feed |
 
@@ -654,9 +636,7 @@ Specific content is detailed in the subsequent NMEA sentence introduction in Sec
 | Field | Name | Format | Parameter Description |
 | --- | --- | --- | --- |
 | 1 | `$PCAS02` | String | Message ID |
-| 2 | `fixInt` | Numeric | Update interval in ms. <br>
-
-<br> 1000=1Hz, 500=2Hz, 250=4Hz, 200=5Hz, 100=10Hz |
+| 2 | `fixInt` | Numeric | Update interval in ms.<br>1000=1Hz<br>500=2Hz<br>250=4Hz<br>200=5Hz<br>100=10Hz |
 | 3 | `CS` | Hex Numeric | Checksum |
 | 4 | `<CR><LF>` | Character | Carriage Return and Line Feed |
 
@@ -709,9 +689,7 @@ Specific content is detailed in the subsequent NMEA sentence introduction in Sec
 | Field | Name | Format | Parameter Description |
 | --- | --- | --- | --- |
 | 1 | `$PCAS04` | String | Message ID |
-| 2 | `mode` | Numeric | Working system configuration: <br>
-
-<br> 1=GPS, 2=BDS, 3=GPS+BDS, 4=GLONASS, 5=GPS+GLONASS, 6=BDS+GLONASS, 7=GPS+BDS+GLONASS |
+| 2 | `mode` | Numeric | Working system configuration: <br> <br> 1=GPS, 2=BDS, 3=GPS+BDS, 4=GLONASS, 5=GPS+GLONASS, 6=BDS+GLONASS, 7=GPS+BDS+GLONASS |
 | 3 | `CS` | Hex Numeric | Checksum |
 | 4 | `<CR><LF>` | Character | Carriage Return and Line Feed |
 
@@ -729,13 +707,7 @@ Specific content is detailed in the subsequent NMEA sentence introduction in Sec
 | Field | Name | Format | Parameter Description |
 | --- | --- | --- | --- |
 | 1 | `$PCAS05` | String | Message ID |
-| 2 | `mode` | Numeric | NMEA protocol type: <br>
-
-<br> 1 or 2 = NMEA 4.1+ <br>
-
-<br> 5 = BDS/GPS Dual mode protocol (compatible with NMEA 2.3+, 4.0) <br>
-
-<br> 9 = Single GPS NMEA 0183 (compatible with NMEA 2.2) |
+| 2 | `mode` | Numeric | NMEA protocol type: <br> <br> 1 or 2 = NMEA 4.1+ <br> <br> 5 = BDS/GPS Dual mode protocol (compatible with NMEA 2.3+, 4.0) <br> <br> 9 = Single GPS NMEA 0183 (compatible with NMEA 2.2) |
 | 3 | `CS` | Hex Numeric | Checksum |
 | 4 | `<CR><LF>` | Character | Carriage Return and Line Feed |
 
@@ -753,17 +725,7 @@ Specific content is detailed in the subsequent NMEA sentence introduction in Sec
 | Field | Name | Format | Parameter Description |
 | --- | --- | --- | --- |
 | 1 | `$PCAS06` | String | Message ID |
-| 2 | `info` | Numeric | Info type to query: <br>
-
-<br> 0=Firmware version <br>
-
-<br> 1=Hardware model/Serial <br>
-
-<br> 2=Working mode <br>
-
-<br> 3=Customer ID <br>
-
-<br> 5=Upgrade code info |
+| 2 | `info` | Numeric | Info type to query: <br> <br> 0=Firmware version <br> <br> 1=Hardware model/Serial <br> <br> 2=Working mode <br> <br> 3=Customer ID <br> <br> 5=Upgrade code info |
 | 3 | `CS` | Hex Numeric | Checksum |
 | 4 | `<CR><LF>` | Character | Carriage Return and Line Feed |
 
@@ -781,15 +743,7 @@ Specific content is detailed in the subsequent NMEA sentence introduction in Sec
 | Field | Name | Format | Parameter Description |
 | --- | --- | --- | --- |
 | 1 | `$PCAS10` | String | Message ID |
-| 2 | `rs` | Numeric | Startup mode: <br>
-
-<br> 0=Hot start (Backup data valid) <br>
-
-<br> 1=Warm start (Clear ephemeris) <br>
-
-<br> 2=Cold start (Clear all except config) <br>
-
-<br> 3=Factory start (Clear all, reset to default) |
+| 2 | `rs` | Numeric | Startup mode: <br> <br> 0=Hot start (Backup data valid) <br> <br> 1=Warm start (Clear ephemeris) <br> <br> 2=Cold start (Clear all except config) <br> <br> 3=Factory start (Clear all, reset to default) |
 | 3 | `CS` | Hex Numeric | Checksum |
 | 4 | `<CR><LF>` | Character | Carriage Return and Line Feed |
 
