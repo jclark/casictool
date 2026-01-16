@@ -41,7 +41,7 @@ from casic import (
     parse_cfg_tp,
     parse_mon_ver,
 )
-from connection import CasicConnection
+from connection import CasicConnection, PollResult
 
 # ============================================================================
 # Enums
@@ -220,7 +220,9 @@ def probe_receiver(
     return False, None  # Timeout - not CASIC
 
 
-def query_nmea_rates(conn: CasicConnection) -> MessageRatesConfig:
+def query_nmea_rates(
+    conn: CasicConnection, log: logging.Logger | None = None
+) -> MessageRatesConfig:
     """Query NMEA message output rates via CFG-MSG.
 
     CFG-MSG query with empty payload returns all configured message rates.
@@ -244,40 +246,60 @@ def query_nmea_rates(conn: CasicConnection) -> MessageRatesConfig:
             if name:
                 rates[name] = rate
 
+    if not rates and log:
+        log.debug("CFG-MSG query returned no NMEA rates")
+
     return MessageRatesConfig(rates=rates)
 
 
-def query_config(conn: CasicConnection) -> ReceiverConfig:
+def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> ReceiverConfig:
     """Query all CFG messages and return receiver configuration."""
     config = ReceiverConfig()
+
+    def _log_failure(name: str, result: PollResult) -> None:
+        if log:
+            if result.nak:
+                log.debug(f"{name} query rejected (NAK)")
+            else:
+                log.debug(f"{name} query timeout")
 
     # Query CFG-PRT
     result = conn.poll(CFG_PRT.cls, CFG_PRT.id)
     if result.success:
         config.port = parse_cfg_prt(result.payload)  # type: ignore[arg-type]
+    else:
+        _log_failure("CFG-PRT", result)
 
     # Query CFG-RATE
     result = conn.poll(CFG_RATE.cls, CFG_RATE.id)
     if result.success:
         config.rate = parse_cfg_rate(result.payload)  # type: ignore[arg-type]
+    else:
+        _log_failure("CFG-RATE", result)
 
     # Query NMEA message rates via CFG-MSG
-    config.message_rates = query_nmea_rates(conn)
+    config.message_rates = query_nmea_rates(conn, log)
 
     # Query CFG-TP
     result = conn.poll(CFG_TP.cls, CFG_TP.id)
     if result.success:
         config.time_pulse = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
+    else:
+        _log_failure("CFG-TP", result)
 
     # Query CFG-TMODE
     result = conn.poll(CFG_TMODE.cls, CFG_TMODE.id)
     if result.success:
         config.timing_mode = parse_cfg_tmode(result.payload)  # type: ignore[arg-type]
+    else:
+        _log_failure("CFG-TMODE", result)
 
     # Query CFG-NAVX
     result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
     if result.success:
         config.nav_engine = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
+    else:
+        _log_failure("CFG-NAVX", result)
 
     return config
 
@@ -757,6 +779,6 @@ def execute_job(
 
     # Query config after operations (unless reset was performed)
     if job.reset not in (ResetMode.FACTORY, ResetMode.COLD):
-        result.config_after = query_config(conn)
+        result.config_after = query_config(conn, log)
 
     return result
