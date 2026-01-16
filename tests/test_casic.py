@@ -423,12 +423,23 @@ class TestNavEngineConfig:
 class TestReceiverConfig:
     def test_format_complete(self) -> None:
         config = ReceiverConfig(
-            port=PortConfig(port_id=0, proto_mask=0x33, mode=0x08C0, baud_rate=9600),
+            ports=[PortConfig(port_id=0, proto_mask=0x33, mode=0x08C0, baud_rate=9600)],
             rate=RateConfig(interval_ms=1000),
         )
         output = config.format()
-        assert "9600" in output
+        assert "UART0: 9600 baud" in output
         assert "1.0 Hz" in output
+
+    def test_format_multiple_ports(self) -> None:
+        config = ReceiverConfig(
+            ports=[
+                PortConfig(port_id=0, proto_mask=0x33, mode=0x08C0, baud_rate=9600),
+                PortConfig(port_id=1, proto_mask=0x33, mode=0x08C0, baud_rate=115200),
+            ],
+        )
+        output = config.format()
+        assert "UART0: 9600 baud" in output
+        assert "UART1: 115200 baud" in output
 
 
 class TestCfgMaskConstants:

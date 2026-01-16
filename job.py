@@ -25,6 +25,7 @@ from casic import (
     MON_VER,
     NMEA_MESSAGES,
     MessageRatesConfig,
+    PortConfig,
     ReceiverConfig,
     VersionInfo,
     build_cfg_cfg,
@@ -277,12 +278,21 @@ def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> Re
             else:
                 log.debug(f"{name} query timeout")
 
-    # Query CFG-PRT
-    result = conn.poll(CFG_PRT.cls, CFG_PRT.id)
-    if result.success:
-        config.port = parse_cfg_prt(result.payload)  # type: ignore[arg-type]
-    else:
-        _log_failure("CFG-PRT", result)
+    # Query CFG-PRT (may return multiple responses, one per port)
+    ports: list[PortConfig] = []
+    conn.send(CFG_PRT.cls, CFG_PRT.id, b"")
+    while True:
+        prt_result = conn.receive(timeout=0.3)
+        if prt_result is None:
+            break
+        recv_id, recv_payload = prt_result
+        if recv_id.cls == CFG_PRT.cls and recv_id.id == CFG_PRT.id and len(recv_payload) >= 8:
+            ports.append(parse_cfg_prt(recv_payload))
+    if ports:
+        # Sort by port_id so UART0 comes first
+        config.ports = sorted(ports, key=lambda p: p.port_id)
+    elif log:
+        log.debug("CFG-PRT query returned no responses")
 
     # Query CFG-RATE
     result = conn.poll(CFG_RATE.cls, CFG_RATE.id)

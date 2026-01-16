@@ -407,6 +407,10 @@ class PortConfig:
     baud_rate: int
 
     @property
+    def port_name(self) -> str:
+        return f"UART{self.port_id}" if self.port_id in (0, 1) else f"Port {self.port_id}"
+
+    @property
     def binary_input(self) -> bool:
         return bool(self.proto_mask & 0x01)
 
@@ -452,7 +456,7 @@ class PortConfig:
         return f"{self.data_bits}{self.parity}{self.stop_bits}"
 
     def format(self) -> str:
-        return f"Baud rate: {self.baud_rate}\nData format: {self.data_format}"
+        return f"{self.port_name}: {self.baud_rate} baud, {self.data_format}"
 
 
 @dataclass
@@ -636,7 +640,7 @@ class NavEngineConfig:
 class ReceiverConfig:
     """Container for all receiver configuration sections."""
 
-    port: PortConfig | None = None
+    ports: list[PortConfig] | None = None
     rate: RateConfig | None = None
     message_rates: MessageRatesConfig | None = None
     time_pulse: TimePulseConfig | None = None
@@ -655,8 +659,9 @@ class ReceiverConfig:
             sections.append(self.rate.format())
         if self.message_rates is not None:
             sections.append(self.message_rates.format())
-        if self.port is not None:
-            sections.append(self.port.format())
+        if self.ports:
+            for port in self.ports:
+                sections.append(port.format())
         return "\n".join(sections)
 
 
