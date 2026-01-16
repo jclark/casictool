@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import struct
 import time
@@ -224,6 +225,7 @@ class CasicConnection:
         baudrate: int = 9600,
         timeout: float = 2.0,
         packet_log: str | None = None,
+        log: logging.Logger | None = None,
     ) -> None:
         self.port = port
         self.baudrate = baudrate
@@ -233,6 +235,7 @@ class CasicConnection:
         self._packet_log: IO[str] | None = None
         if packet_log:
             self._packet_log = open(packet_log, "a")
+        self._log = log
 
     def close(self) -> None:
         if self._packet_log:
@@ -292,6 +295,9 @@ class CasicConnection:
         self._serial.write(msg)
         self._serial.flush()
         self._log_casic_packet(msg, ts, out=True)
+        if self._log:
+            msg_name = MSG_NAMES.get((cls, id), f"0x{cls:02X}-0x{id:02X}")
+            self._log.debug(f"TX {msg_name} ({len(payload)} bytes)")
 
     def receive(self, timeout: float | None = None) -> tuple[MsgID, bytes] | None:
         """Receive and parse a CASIC message.
@@ -353,6 +359,10 @@ class CasicConnection:
                 result = parse_msg(full_msg)
                 if result is not None:
                     self._log_casic_packet(full_msg, ts, out=False)
+                    if self._log:
+                        msg_id, payload = result
+                        msg_name = MSG_NAMES.get((msg_id.cls, msg_id.id), f"0x{msg_id.cls:02X}-0x{msg_id.id:02X}")
+                        self._log.debug(f"RX {msg_name} ({len(payload)} bytes)")
                     return result
 
             return None

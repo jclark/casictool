@@ -328,7 +328,7 @@ def main() -> int:
 
     # Connect to receiver
     try:
-        conn = CasicConnection(args.device, args.speed, packet_log=args.packet_log)
+        conn = CasicConnection(args.device, args.speed, packet_log=args.packet_log, log=log)
     except Exception as e:
         log.error(f"error: could not connect to {args.device}: {e}")
         return 1

@@ -401,7 +401,7 @@ def run_casictool(argv: list[str], log: logging.Logger) -> CommandResult:
     # Execute the job
     try:
         with CasicConnection(
-            args.device, baudrate=args.device_speed, packet_log=args.packet_log
+            args.device, baudrate=args.device_speed, packet_log=args.packet_log, log=log
         ) as conn:
             # Probe receiver once (skip for factory/cold reset)
             if job.reset not in (ResetMode.FACTORY, ResetMode.COLD):
