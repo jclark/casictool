@@ -130,7 +130,7 @@ class CasicConnection:
         self._log_casic_packet(msg, ts, out=True)
         if self._log:
             msg_name = MSG_NAMES.get((cls, id), f"0x{cls:02X}-0x{id:02X}")
-            self._log.debug(f"TX {msg_name} ({len(payload)} bytes)")
+            self._log.debug(f"TX {msg_name} ({len(payload)} payload bytes)")
 
     def receive(self, timeout: float | None = None) -> tuple[MsgID, bytes] | None:
         """Receive and parse a CASIC message.
@@ -143,6 +143,13 @@ class CasicConnection:
         start_time = time.monotonic()
         old_timeout = self._serial.timeout
         self._serial.timeout = min(0.1, timeout)
+        discarded = 0
+
+        def _log_discarded(force: bool = False) -> None:
+            nonlocal discarded
+            if discarded and self._log and (force or discarded >= 100):
+                self._log.debug(f"discarded {discarded} bytes")
+                discarded = 0
 
         try:
             while time.monotonic() - start_time < timeout:
@@ -154,6 +161,7 @@ class CasicConnection:
 
                 # Check for NMEA sentence start
                 if byte1[0] == 0x24:  # '$'
+                    _log_discarded(force=True)
                     nmea_buf = bytearray(byte1)
                     # Read until newline or timeout
                     while time.monotonic() - start_time < timeout:
@@ -172,32 +180,46 @@ class CasicConnection:
 
                 # Check for CASIC message start
                 if byte1[0] != SYNC1:
+                    discarded += 1
+                    _log_discarded()
                     continue
 
                 byte2 = self._serial.read(1)
                 if not byte2 or byte2[0] != SYNC2:
+                    discarded += 1 + len(byte2)
+                    _log_discarded()
                     continue
 
                 length_bytes = self._serial.read(2)
                 if len(length_bytes) < 2:
+                    discarded += 2 + len(length_bytes)
+                    _log_discarded()
                     continue
 
                 length = int.from_bytes(length_bytes, "little")
                 remaining = 2 + length + 4
                 rest = self._serial.read(remaining)
                 if len(rest) < remaining:
+                    discarded += 4 + len(rest)
+                    _log_discarded()
                     continue
 
                 full_msg = bytes([SYNC1, SYNC2]) + length_bytes + rest
                 result = parse_msg(full_msg)
-                if result is not None:
-                    self._log_casic_packet(full_msg, ts, out=False)
-                    if self._log:
-                        msg_id, payload = result
-                        msg_name = MSG_NAMES.get((msg_id.cls, msg_id.id), f"0x{msg_id.cls:02X}-0x{msg_id.id:02X}")
-                        self._log.debug(f"RX {msg_name} ({len(payload)} bytes)")
-                    return result
+                if result is None:
+                    discarded += len(full_msg)
+                    _log_discarded()
+                    continue
 
+                _log_discarded()
+                self._log_casic_packet(full_msg, ts, out=False)
+                if self._log:
+                    msg_id, payload = result
+                    msg_name = MSG_NAMES.get((msg_id.cls, msg_id.id), f"0x{msg_id.cls:02X}-0x{msg_id.id:02X}")
+                    self._log.debug(f"RX {msg_name} ({len(payload)} payload bytes)")
+                return result
+
+            _log_discarded(force=True)
             return None
         finally:
             self._serial.timeout = old_timeout
