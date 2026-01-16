@@ -1,8 +1,6 @@
-# CASIC Protocol Errata
+# Notes on CASIC Protocol
 
-This document records differences between the CASIC protocol specification and observed receiver behavior.
-
-
+This document notes points discovered while implementing, where either receiver behaviour differs from the specification or where the specification is unclear.
 
 ## Checksum Calculation
 
