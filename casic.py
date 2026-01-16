@@ -117,6 +117,11 @@ CFG_MASK_TP = 0x0010  # B4: CFG-TP
 CFG_MASK_GROUP = 0x0020  # B5: CFG-GROUP
 CFG_MASK_ALL = 0xFFFF  # All sections
 
+# Port IDs for CFG-PRT
+PORT_UART0 = 0x00
+PORT_UART1 = 0x01
+PORT_CURRENT = 0xFF
+
 # BBR mask bits for CFG-RST (battery-backed RAM sections)
 BBR_EPHEMERIS = 0x0001  # B0
 BBR_ALMANAC = 0x0002  # B1
@@ -378,15 +383,15 @@ class CasicConnection:
 
         return False
 
-    def poll(self, cls: int, id: int, timeout: float = 2.0) -> PollResult:
-        """Send query (empty payload) and wait for response.
+    def poll(self, cls: int, id: int, payload: bytes = b"", timeout: float = 2.0) -> PollResult:
+        """Send query and wait for response.
 
         Returns PollResult with:
         - payload set on success
         - nak=True if receiver rejected the query
         - both None/False on timeout
         """
-        self.send(cls, id, b"")
+        self.send(cls, id, payload)
 
         start_time = time.monotonic()
         while time.monotonic() - start_time < timeout:
