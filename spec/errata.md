@@ -2,9 +2,7 @@
 
 This document records differences between the CASIC protocol specification and observed receiver behavior.
 
-## Tested Hardware
 
-- SR1612Z1
 
 ## Checksum Calculation
 
@@ -23,6 +21,16 @@ The class and id bytes are swapped in the checksum calculation compared to what 
 ## MON-VER Support
 
 The MON-VER (0x0A 0x04) query message is not supported on all receivers. Some receivers respond with ACK-NAK instead of the version information. The tool handles this by accepting a NAK as proof that the device speaks CASIC protocol.
+
+## CFG-PRT Query
+
+**Spec says:**
+- Query Message: Length = 0
+
+**Observed behavior:**
+- Sending CFG-PRT (0x06 0x00) with an empty payload causes the receiver to respond with multiple CFG-PRT messages, one for each UART port (UART0, UART1)
+- Each response is 8 bytes with the standard CFG-PRT format, where portID indicates which port (0 or 1)
+- The spec does not document that multiple responses are returned
 
 ## CFG-MSG Query
 
