@@ -1,4 +1,4 @@
-SRC_FILES = casictool.py casic.py job.py casic_hwtest.py
+SRC_FILES = casictool.py casic.py connection.py job.py casic_hwtest.py
 
 dev-deps:
 	.venv/bin/pip install -e ".[dev]"

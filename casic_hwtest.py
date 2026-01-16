@@ -11,7 +11,7 @@ import logging
 import sys
 from dataclasses import dataclass
 
-from casic import CasicConnection
+from connection import CasicConnection
 from job import (
     GNSS,
     NMEA,

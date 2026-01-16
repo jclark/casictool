@@ -24,7 +24,6 @@ from casic import (
     CFG_TP,
     MON_VER,
     NMEA_MESSAGES,
-    CasicConnection,
     MessageRatesConfig,
     ReceiverConfig,
     VersionInfo,
@@ -42,6 +41,7 @@ from casic import (
     parse_cfg_tp,
     parse_mon_ver,
 )
+from connection import CasicConnection
 
 # ============================================================================
 # Enums

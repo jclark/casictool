@@ -9,7 +9,7 @@ import sys
 
 import serial
 
-from casic import CasicConnection
+from connection import CasicConnection
 from job import (
     GNSS,
     NMEA,
