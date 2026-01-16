@@ -50,39 +50,39 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Log all packets to JSONL file",
     )
 
-    # Timing mode group
-    timing_group = parser.add_argument_group("Timing Mode")
-    timing_group.add_argument(
+    # Time mode group
+    time_mode_group = parser.add_argument_group("Time Mode")
+    time_mode_group.add_argument(
         "--survey", action="store_true", help="Enable survey-in mode"
     )
-    timing_group.add_argument(
+    time_mode_group.add_argument(
         "--survey-time",
         type=int,
         default=2000,
         metavar="SECS",
         help="Survey-in minimum duration in seconds (default: 2000)",
     )
-    timing_group.add_argument(
+    time_mode_group.add_argument(
         "--survey-acc",
         type=float,
         default=20.0,
         metavar="METERS",
         help="Survey-in target accuracy in meters (default: 20)",
     )
-    timing_group.add_argument(
+    time_mode_group.add_argument(
         "--fixed-pos-ecef",
         type=str,
         metavar="X,Y,Z",
         help="Set fixed ECEF position (meters, comma-separated)",
     )
-    timing_group.add_argument(
+    time_mode_group.add_argument(
         "--fixed-pos-acc",
         type=float,
         default=1.0,
         metavar="METERS",
         help="Fixed position accuracy in meters (default: 1)",
     )
-    timing_group.add_argument(
+    time_mode_group.add_argument(
         "--mobile", action="store_true", help="Enable mobile/auto mode (disable timing mode)"
     )
 
