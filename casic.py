@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import struct
+from collections import deque
 from dataclasses import dataclass
 
 # Sync bytes
@@ -182,6 +183,191 @@ def parse_msg(data: bytes) -> tuple[MsgID, bytes] | None:
         return None
 
     return MsgID(cls, id), payload
+
+
+MAX_CASIC_PAYLOAD = 4096
+MAX_NMEA_LEN = 1024
+
+
+@dataclass(frozen=True)
+class CasicPacket:
+    """Parsed CASIC packet."""
+
+    msg_id: MsgID
+    payload: bytes
+    timestamp: float
+    raw: bytes
+
+
+@dataclass(frozen=True)
+class NmeaSentence:
+    """Parsed NMEA sentence."""
+
+    data: bytes
+    timestamp: float
+
+
+@dataclass(frozen=True)
+class UnknownBytes:
+    """Unrecognized bytes from the stream."""
+
+    data: bytes
+    timestamp: float
+
+
+StreamEvent = CasicPacket | NmeaSentence | UnknownBytes
+
+
+class CasicStreamParser:
+    """Incremental stream parser for CASIC binary and NMEA sentences."""
+
+    _STATE_IDLE = 0
+    _STATE_SYNC2 = 1
+    _STATE_LEN1 = 2
+    _STATE_LEN2 = 3
+    _STATE_BODY = 4
+    _STATE_NMEA = 5
+
+    def __init__(self) -> None:
+        self._state = self._STATE_IDLE
+        self._casic_buf = bytearray()
+        self._nmea_buf = bytearray()
+        self._unknown_buf = bytearray()
+        self._casic_ts = 0.0
+        self._nmea_ts = 0.0
+        self._unknown_ts = 0.0
+        self._length_lo = 0
+        self._remaining = 0
+        self._queue: deque[StreamEvent] = deque()
+
+    def _reset_casic(self) -> None:
+        self._casic_buf.clear()
+        self._length_lo = 0
+        self._remaining = 0
+
+    def _reset_nmea(self) -> None:
+        self._nmea_buf.clear()
+
+    def _reset_unknown(self) -> None:
+        self._unknown_buf.clear()
+        self._unknown_ts = 0.0
+
+    def _queue_unknown(self, data: bytes, ts: float) -> None:
+        if data:
+            self._queue.append(UnknownBytes(data=data, timestamp=ts))
+
+    def _note_unknown(self, b: int, ts: float) -> None:
+        if not self._unknown_buf:
+            self._unknown_ts = ts
+        self._unknown_buf.append(b)
+
+    def _flush_unknown(self) -> None:
+        if self._unknown_buf:
+            self._queue_unknown(bytes(self._unknown_buf), self._unknown_ts)
+            self._reset_unknown()
+
+    def pop_event(self) -> StreamEvent | None:
+        """Return next parsed event, if any."""
+        if self._queue:
+            return self._queue.popleft()
+        return None
+
+    def feed(self, data: bytes, ts: float) -> None:
+        """Feed raw bytes into the parser."""
+        for b in data:
+            if self._state == self._STATE_IDLE:
+                if b == SYNC1:
+                    self._flush_unknown()
+                    self._casic_ts = ts
+                    self._casic_buf.append(b)
+                    self._state = self._STATE_SYNC2
+                elif b == 0x24:  # '$'
+                    self._flush_unknown()
+                    self._nmea_ts = ts
+                    self._nmea_buf.append(b)
+                    self._state = self._STATE_NMEA
+                else:
+                    self._note_unknown(b, ts)
+                continue
+
+            if self._state == self._STATE_SYNC2:
+                if b == SYNC2:
+                    self._casic_buf.append(b)
+                    self._state = self._STATE_LEN1
+                else:
+                    self._queue_unknown(bytes(self._casic_buf), self._casic_ts)
+                    self._reset_casic()
+                    self._state = self._STATE_IDLE
+                    if b == SYNC1:
+                        self._flush_unknown()
+                        self._casic_ts = ts
+                        self._casic_buf.append(b)
+                        self._state = self._STATE_SYNC2
+                    elif b == 0x24:  # '$'
+                        self._flush_unknown()
+                        self._nmea_ts = ts
+                        self._nmea_buf.append(b)
+                        self._state = self._STATE_NMEA
+                    else:
+                        self._note_unknown(b, ts)
+                continue
+
+            if self._state == self._STATE_LEN1:
+                self._casic_buf.append(b)
+                self._length_lo = b
+                self._state = self._STATE_LEN2
+                continue
+
+            if self._state == self._STATE_LEN2:
+                self._casic_buf.append(b)
+                length = self._length_lo | (b << 8)
+                if length > MAX_CASIC_PAYLOAD:
+                    self._queue_unknown(bytes(self._casic_buf), self._casic_ts)
+                    self._reset_casic()
+                    self._state = self._STATE_IDLE
+                    continue
+                self._remaining = length + 2 + 4
+                self._state = self._STATE_BODY
+                continue
+
+            if self._state == self._STATE_BODY:
+                self._casic_buf.append(b)
+                self._remaining -= 1
+                if self._remaining == 0:
+                    full_msg = bytes(self._casic_buf)
+                    parsed = parse_msg(full_msg)
+                    if parsed is None:
+                        self._queue_unknown(full_msg, self._casic_ts)
+                    else:
+                        msg_id, payload = parsed
+                        self._queue.append(
+                            CasicPacket(
+                                msg_id=msg_id,
+                                payload=payload,
+                                timestamp=self._casic_ts,
+                                raw=full_msg,
+                            )
+                        )
+                    self._reset_casic()
+                    self._state = self._STATE_IDLE
+                continue
+
+            if self._state == self._STATE_NMEA:
+                self._nmea_buf.append(b)
+                if b == 0x0A:  # '\n'
+                    self._queue.append(
+                        NmeaSentence(data=bytes(self._nmea_buf), timestamp=self._nmea_ts)
+                    )
+                    self._reset_nmea()
+                    self._state = self._STATE_IDLE
+                    continue
+                if len(self._nmea_buf) > MAX_NMEA_LEN:
+                    self._queue_unknown(bytes(self._nmea_buf), self._nmea_ts)
+                    self._reset_nmea()
+                    self._state = self._STATE_IDLE
+                continue
+
+        self._flush_unknown()
 
 
 # ============================================================================

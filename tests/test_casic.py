@@ -36,13 +36,17 @@ from casic import (
     CFG_TP,
     CLS_ACK,
     CLS_CFG,
+    CasicPacket,
+    CasicStreamParser,
     MsgID,
     NavEngineConfig,
+    NmeaSentence,
     PortConfig,
     RateConfig,
     ReceiverConfig,
     TimePulseConfig,
     TimingModeConfig,
+    UnknownBytes,
     build_cfg_cfg,
     build_cfg_msg_set,
     build_cfg_navx,
@@ -58,6 +62,16 @@ from casic import (
 )
 from casictool import GNSS, parse_gnss_arg, parse_nmea_out
 from job import ConfigChanges
+
+
+def _drain_stream_events(parser: CasicStreamParser) -> list[object]:
+    events: list[object] = []
+    while True:
+        event = parser.pop_event()
+        if event is None:
+            break
+        events.append(event)
+    return events
 
 
 class TestMsgID:
@@ -172,6 +186,57 @@ class TestParseMsg:
             assert mid.cls == cls
             assert mid.id == id
             assert data == payload
+
+
+class TestStreamParser:
+    def test_parser_handles_partial_casic_message(self) -> None:
+        parser = CasicStreamParser()
+        msg = pack_msg(0x06, 0x00, b"")
+
+        parser.feed(msg[:3], 1.0)
+        assert parser.pop_event() is None
+
+        parser.feed(msg[3:7], 1.0)
+        assert parser.pop_event() is None
+
+        parser.feed(msg[7:], 1.0)
+        event = parser.pop_event()
+        assert isinstance(event, CasicPacket)
+        assert event.msg_id.cls == 0x06
+        assert event.msg_id.id == 0x00
+        assert event.payload == b""
+
+    def test_parser_parses_nmea_sentence(self) -> None:
+        parser = CasicStreamParser()
+        sentence = b"$GNGGA,1*00\r\n"
+
+        parser.feed(sentence, 2.0)
+        event = parser.pop_event()
+        assert isinstance(event, NmeaSentence)
+        assert event.data == sentence
+
+    def test_parser_interleaves_casic_and_nmea(self) -> None:
+        parser = CasicStreamParser()
+        msg1 = pack_msg(0x05, 0x01, b"\x06\x00")
+        msg2 = pack_msg(0x06, 0x04, b"\x01")
+        sentence = b"$GNRMC,1*00\r\n"
+
+        parser.feed(msg1 + sentence + msg2, 3.0)
+        events = _drain_stream_events(parser)
+        assert len(events) == 3
+        assert isinstance(events[0], CasicPacket)
+        assert isinstance(events[1], NmeaSentence)
+        assert isinstance(events[2], CasicPacket)
+
+    def test_parser_discards_bad_checksum(self) -> None:
+        parser = CasicStreamParser()
+        msg = pack_msg(0x05, 0x01, b"\x06\x00")
+        corrupted = msg[:-1] + bytes([msg[-1] ^ 0xFF])
+
+        parser.feed(corrupted, 4.0)
+        event = parser.pop_event()
+        assert isinstance(event, UnknownBytes)
+        assert event.data == corrupted
 
 
 class TestMessageConstants:

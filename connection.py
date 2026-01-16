@@ -15,11 +15,11 @@ from casic import (
     ACK_ACK,
     ACK_NAK,
     MSG_NAMES,
-    SYNC1,
-    SYNC2,
+    CasicStreamParser,
     MsgID,
+    NmeaSentence,
+    UnknownBytes,
     pack_msg,
-    parse_msg,
 )
 
 if TYPE_CHECKING:
@@ -31,6 +31,10 @@ def _extract_nmea_msg_type(sentence: str) -> str:
     if sentence.startswith("$") and "," in sentence:
         return sentence[1 : sentence.index(",")]
     return "NMEA"
+
+
+READ_CHUNK_SIZE = 256
+
 
 
 @dataclass
@@ -69,6 +73,7 @@ class CasicConnection:
         if packet_log:
             self._packet_log = open(packet_log, "a")
         self._log = log
+        self._parser = CasicStreamParser()
 
     def close(self) -> None:
         if self._packet_log:
@@ -110,6 +115,23 @@ class CasicConnection:
         self._packet_log.write(json.dumps(entry) + "\n")
         self._packet_log.flush()
 
+    def _log_unknown_packet(self, data: bytes, ts: float) -> None:
+        """Log unrecognized bytes to the packet log."""
+        if not self._packet_log:
+            return
+        dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+        entry: dict[str, object] = {
+            "t": dt.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z",
+            "out": False,
+        }
+        # Check if all bytes are printable ASCII or whitespace
+        if all(0x20 <= b <= 0x7E or b in (0x09, 0x0A, 0x0D) for b in data):
+            entry["ascii"] = data.decode("ascii")
+        else:
+            entry["bin"] = data.hex()
+        self._packet_log.write(json.dumps(entry) + "\n")
+        self._packet_log.flush()
+
     def __enter__(self) -> CasicConnection:
         return self
 
@@ -143,83 +165,54 @@ class CasicConnection:
         start_time = time.monotonic()
         old_timeout = self._serial.timeout
         self._serial.timeout = min(0.1, timeout)
-        discarded = 0
 
-        def _log_discarded(force: bool = False) -> None:
-            nonlocal discarded
-            if discarded and self._log and (force or discarded >= 100):
-                self._log.debug(f"discarded {discarded} bytes")
-                discarded = 0
+        def _drain_events() -> tuple[MsgID, bytes] | None:
+            while True:
+                event = self._parser.pop_event()
+                if event is None:
+                    return None
+                if isinstance(event, NmeaSentence):
+                    try:
+                        sentence = event.data.decode("ascii")
+                    except UnicodeDecodeError:
+                        continue
+                    self._log_nmea_packet(sentence, event.timestamp)
+                    if self._log:
+                        # Extract message type (e.g., "GNGGA" from "$GNGGA,...")
+                        msg_type = sentence[1:].split(",", 1)[0] if sentence else "?"
+                        self._log.debug(f"RX NMEA {msg_type}")
+                    continue
+                if isinstance(event, UnknownBytes):
+                    self._log_unknown_packet(event.data, event.timestamp)
+                    if self._log:
+                        self._log.debug(f"RX UNKNOWN ({len(event.data)} bytes)")
+                    continue
+                self._log_casic_packet(event.raw, event.timestamp, out=False)
+                if self._log:
+                    msg_name = MSG_NAMES.get(
+                        (event.msg_id.cls, event.msg_id.id),
+                        f"0x{event.msg_id.cls:02X}-0x{event.msg_id.id:02X}",
+                    )
+                    self._log.debug(f"RX {msg_name} ({len(event.payload)} payload bytes)")
+                return event.msg_id, event.payload
 
         try:
             while time.monotonic() - start_time < timeout:
-                byte1 = self._serial.read(1)
-                if not byte1:
+                result = _drain_events()
+                if result is not None:
+                    return result
+
+                data = self._serial.read(READ_CHUNK_SIZE)
+                if not data:
                     continue
 
-                ts = time.time()  # Timestamp when first byte received
+                ts = time.time()
+                self._parser.feed(data, ts)
 
-                # Check for NMEA sentence start
-                if byte1[0] == 0x24:  # '$'
-                    _log_discarded(force=True)
-                    nmea_buf = bytearray(byte1)
-                    # Read until newline or timeout
-                    while time.monotonic() - start_time < timeout:
-                        b = self._serial.read(1)
-                        if not b:
-                            break
-                        nmea_buf.extend(b)
-                        if b[0] == 0x0A:  # '\n'
-                            try:
-                                sentence = nmea_buf.decode("ascii")
-                                self._log_nmea_packet(sentence, ts)
-                            except UnicodeDecodeError:
-                                pass
-                            break
-                    continue
+                result = _drain_events()
+                if result is not None:
+                    return result
 
-                # Check for CASIC message start
-                if byte1[0] != SYNC1:
-                    discarded += 1
-                    _log_discarded()
-                    continue
-
-                byte2 = self._serial.read(1)
-                if not byte2 or byte2[0] != SYNC2:
-                    discarded += 1 + len(byte2)
-                    _log_discarded()
-                    continue
-
-                length_bytes = self._serial.read(2)
-                if len(length_bytes) < 2:
-                    discarded += 2 + len(length_bytes)
-                    _log_discarded()
-                    continue
-
-                length = int.from_bytes(length_bytes, "little")
-                remaining = 2 + length + 4
-                rest = self._serial.read(remaining)
-                if len(rest) < remaining:
-                    discarded += 4 + len(rest)
-                    _log_discarded()
-                    continue
-
-                full_msg = bytes([SYNC1, SYNC2]) + length_bytes + rest
-                result = parse_msg(full_msg)
-                if result is None:
-                    discarded += len(full_msg)
-                    _log_discarded()
-                    continue
-
-                _log_discarded()
-                self._log_casic_packet(full_msg, ts, out=False)
-                if self._log:
-                    msg_id, payload = result
-                    msg_name = MSG_NAMES.get((msg_id.cls, msg_id.id), f"0x{msg_id.cls:02X}-0x{msg_id.id:02X}")
-                    self._log.debug(f"RX {msg_name} ({len(payload)} payload bytes)")
-                return result
-
-            _log_discarded(force=True)
             return None
         finally:
             self._serial.timeout = old_timeout
