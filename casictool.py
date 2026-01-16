@@ -419,6 +419,19 @@ def run_casictool(argv: list[str], log: logging.Logger) -> CommandResult:
         return CommandResult(success=False, error=str(e))
 
 
+class LevelFormatter(logging.Formatter):
+    """Formatter that prefixes non-INFO messages with their level."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        if record.levelno == logging.DEBUG:
+            record.msg = f"debug: {record.msg}"
+        elif record.levelno == logging.WARNING:
+            record.msg = f"warning: {record.msg}"
+        elif record.levelno == logging.ERROR:
+            record.msg = f"error: {record.msg}"
+        return super().format(record)
+
+
 def main() -> int:
     """CLI entry point."""
     # Parse args early to get logging level
@@ -435,7 +448,7 @@ def main() -> int:
         level = logging.INFO
     handler.setLevel(level)
     log.setLevel(level)
-    handler.setFormatter(logging.Formatter("%(message)s"))
+    handler.setFormatter(LevelFormatter("%(message)s"))
     log.addHandler(handler)
 
     result = run_casictool(sys.argv[1:], log)

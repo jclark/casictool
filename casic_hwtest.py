@@ -11,6 +11,7 @@ import logging
 import sys
 from dataclasses import dataclass
 
+from casictool import LevelFormatter
 from connection import CasicConnection
 from job import (
     GNSS,
@@ -310,7 +311,7 @@ def main() -> int:
         level = logging.INFO
     handler.setLevel(level)
     log.setLevel(level)
-    handler.setFormatter(logging.Formatter("%(message)s"))
+    handler.setFormatter(LevelFormatter("%(message)s"))
     log.addHandler(handler)
 
     # Determine which tests to run
@@ -330,13 +331,13 @@ def main() -> int:
     try:
         conn = CasicConnection(args.device, args.speed, packet_log=args.packet_log, log=log)
     except Exception as e:
-        log.error(f"error: could not connect to {args.device}: {e}")
+        log.error(f"could not connect to {args.device}: {e}")
         return 1
 
     # Probe receiver once at startup
     is_casic, version = probe_receiver(conn)
     if not is_casic:
-        log.error("error: no response from receiver")
+        log.error("no response from receiver")
         conn.close()
         return 1
     if version:

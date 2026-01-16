@@ -638,7 +638,7 @@ def execute_job(
                 log.info(f"GNSS set: {', '.join(systems)}")
                 changes.mark_nav()
             else:
-                log.error("error: failed to set GNSS")
+                log.error("failed to set GNSS")
                 result.success = False
                 result.error = "Failed to set GNSS constellations"
                 return result
@@ -651,7 +651,7 @@ def execute_job(
                     log.info("mobile mode enabled")
                     changes.mark_nav()
                 else:
-                    log.error("error: failed to set mobile mode")
+                    log.error("failed to set mobile mode")
                     result.success = False
                     result.error = "Failed to set mobile mode"
                     return result
@@ -660,7 +660,7 @@ def execute_job(
                     log.info(f"survey-in mode: {time_mode.min_dur}s, {time_mode.acc}m")
                     changes.mark_nav()
                 else:
-                    log.error("error: failed to set survey-in mode")
+                    log.error("failed to set survey-in mode")
                     result.success = False
                     result.error = "Failed to set survey-in mode"
                     return result
@@ -670,7 +670,7 @@ def execute_job(
                     log.info(f"fixed position: ECEF ({ecef[0]:.3f}, {ecef[1]:.3f}, {ecef[2]:.3f})")
                     changes.mark_nav()
                 else:
-                    log.error("error: failed to set fixed position")
+                    log.error("failed to set fixed position")
                     result.success = False
                     result.error = "Failed to set fixed position"
                     return result
@@ -686,7 +686,7 @@ def execute_job(
                     log.info(f"PPS: {tp.width}s width")
                 changes.mark_tp()
             else:
-                log.error("error: failed to configure PPS")
+                log.error("failed to configure PPS")
                 result.success = False
                 result.error = "Failed to configure PPS"
                 return result
@@ -695,7 +695,7 @@ def execute_job(
                 log.info(f"PPS time source: {tp.time_gnss.value}")
                 changes.mark_tp()
             else:
-                log.error("error: failed to set PPS time source")
+                log.error("failed to set PPS time source")
                 result.success = False
                 result.error = "Failed to set PPS time source"
                 return result
@@ -713,7 +713,7 @@ def execute_job(
                         log.info(f"NMEA {nmea.name} disabled")
                     changes.mark_msg()
                 else:
-                    log.error(f"error: failed to set NMEA {nmea.name}")
+                    log.error(f"failed to set NMEA {nmea.name}")
                     result.success = False
                     result.error = f"Failed to {'enable' if target_rate > 0 else 'disable'} {nmea.name}"
                     return result
@@ -723,18 +723,18 @@ def execute_job(
         if save_config(conn, CFG_MASK_ALL):
             log.info("config saved to NVM")
         else:
-            log.error("error: failed to save config")
+            log.error("failed to save config")
             result.success = False
             result.error = "Failed to save configuration"
             return result
     elif job.save == SaveMode.CHANGES:
         if changes.mask == 0:
-            log.warning("warning: no config changes to save")
+            log.warning("no config changes to save")
         else:
             if save_config(conn, changes.mask):
                 log.info("config saved to NVM")
             else:
-                log.error("error: failed to save config")
+                log.error("failed to save config")
                 result.success = False
                 result.error = "Failed to save configuration"
                 return result
@@ -744,7 +744,7 @@ def execute_job(
         if load_config(conn, CFG_MASK_ALL):
             log.info("config reloaded from NVM")
         else:
-            log.error("error: failed to reload config")
+            log.error("failed to reload config")
             result.success = False
             result.error = "Failed to reload configuration"
             return result
