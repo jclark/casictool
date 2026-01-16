@@ -405,7 +405,7 @@ def run_casictool(argv: list[str], log: logging.Logger) -> CommandResult:
         ) as conn:
             # Probe receiver once (skip for factory/cold reset)
             if job.reset not in (ResetMode.FACTORY, ResetMode.COLD):
-                is_casic, version = probe_receiver(conn)
+                is_casic, version = probe_receiver(conn, log)
                 if not is_casic:
                     return CommandResult(
                         success=False, error="No response from receiver. Not a CASIC device?"

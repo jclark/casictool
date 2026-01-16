@@ -15,9 +15,11 @@ from casic import (
     ACK_ACK,
     ACK_NAK,
     MSG_NAMES,
+    CasicPacket,
     CasicStreamParser,
     MsgID,
     NmeaSentence,
+    StreamEvent,
     UnknownBytes,
     pack_msg,
 )
@@ -154,10 +156,35 @@ class CasicConnection:
             msg_name = MSG_NAMES.get((cls, id), f"0x{cls:02X}-0x{id:02X}")
             self._log.debug(f"TX {msg_name} ({len(payload)} payload bytes)")
 
-    def receive(self, timeout: float | None = None) -> tuple[MsgID, bytes] | None:
-        """Receive and parse a CASIC message.
+    def _log_event(self, event: StreamEvent) -> None:
+        """Log a received event to packet log and debug output."""
+        if isinstance(event, NmeaSentence):
+            try:
+                sentence = event.data.decode("ascii")
+            except UnicodeDecodeError:
+                return
+            self._log_nmea_packet(sentence, event.timestamp)
+            if self._log:
+                msg_type = sentence[1:].split(",", 1)[0] if sentence else "?"
+                self._log.debug(f"RX NMEA {msg_type}")
+        elif isinstance(event, UnknownBytes):
+            self._log_unknown_packet(event.data, event.timestamp)
+            if self._log:
+                self._log.debug(f"RX UNKNOWN ({len(event.data)} bytes)")
+        elif isinstance(event, CasicPacket):
+            self._log_casic_packet(event.raw, event.timestamp, out=False)
+            if self._log:
+                msg_name = MSG_NAMES.get(
+                    (event.msg_id.cls, event.msg_id.id),
+                    f"0x{event.msg_id.cls:02X}-0x{event.msg_id.id:02X}",
+                )
+                self._log.debug(f"RX {msg_name} ({len(event.payload)} payload bytes)")
 
-        Also logs NMEA sentences to packet log if enabled.
+    def receive_packet(self, timeout: float | None = None) -> StreamEvent | None:
+        """Receive next packet of any type (CASIC, NMEA, or Unknown).
+
+        Handles packet logging and debug output for all packet types.
+        Returns None on timeout.
         """
         if timeout is None:
             timeout = self.timeout
@@ -166,41 +193,12 @@ class CasicConnection:
         old_timeout = self._serial.timeout
         self._serial.timeout = min(0.1, timeout)
 
-        def _drain_events() -> tuple[MsgID, bytes] | None:
-            while True:
-                event = self._parser.pop_event()
-                if event is None:
-                    return None
-                if isinstance(event, NmeaSentence):
-                    try:
-                        sentence = event.data.decode("ascii")
-                    except UnicodeDecodeError:
-                        continue
-                    self._log_nmea_packet(sentence, event.timestamp)
-                    if self._log:
-                        # Extract message type (e.g., "GNGGA" from "$GNGGA,...")
-                        msg_type = sentence[1:].split(",", 1)[0] if sentence else "?"
-                        self._log.debug(f"RX NMEA {msg_type}")
-                    continue
-                if isinstance(event, UnknownBytes):
-                    self._log_unknown_packet(event.data, event.timestamp)
-                    if self._log:
-                        self._log.debug(f"RX UNKNOWN ({len(event.data)} bytes)")
-                    continue
-                self._log_casic_packet(event.raw, event.timestamp, out=False)
-                if self._log:
-                    msg_name = MSG_NAMES.get(
-                        (event.msg_id.cls, event.msg_id.id),
-                        f"0x{event.msg_id.cls:02X}-0x{event.msg_id.id:02X}",
-                    )
-                    self._log.debug(f"RX {msg_name} ({len(event.payload)} payload bytes)")
-                return event.msg_id, event.payload
-
         try:
             while time.monotonic() - start_time < timeout:
-                result = _drain_events()
-                if result is not None:
-                    return result
+                event = self._parser.pop_event()
+                if event is not None:
+                    self._log_event(event)
+                    return event
 
                 data = self._serial.read(READ_CHUNK_SIZE)
                 if not data:
@@ -209,13 +207,29 @@ class CasicConnection:
                 ts = time.time()
                 self._parser.feed(data, ts)
 
-                result = _drain_events()
-                if result is not None:
-                    return result
+                event = self._parser.pop_event()
+                if event is not None:
+                    self._log_event(event)
+                    return event
 
             return None
         finally:
             self._serial.timeout = old_timeout
+
+    def receive(self, timeout: float | None = None) -> tuple[MsgID, bytes] | None:
+        """Receive next CASIC binary message, skipping NMEA and unknown packets."""
+        if timeout is None:
+            timeout = self.timeout
+
+        start_time = time.monotonic()
+        while time.monotonic() - start_time < timeout:
+            remaining = timeout - (time.monotonic() - start_time)
+            event = self.receive_packet(timeout=remaining)
+            if event is None:
+                return None
+            if isinstance(event, CasicPacket):
+                return event.msg_id, event.payload
+        return None
 
     def send_and_wait_ack(
         self, cls: int, id: int, payload: bytes, timeout: float = 2.0

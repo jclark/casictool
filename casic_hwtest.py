@@ -335,7 +335,7 @@ def main() -> int:
         return 1
 
     # Probe receiver once at startup
-    is_casic, version = probe_receiver(conn)
+    is_casic, version = probe_receiver(conn, log)
     if not is_casic:
         log.error("no response from receiver")
         conn.close()

@@ -201,23 +201,37 @@ class ConfigChanges:
 
 
 def probe_receiver(
-    conn: CasicConnection, timeout: float = 5.0
+    conn: CasicConnection, log: logging.Logger
 ) -> tuple[bool, VersionInfo | None]:
     """Probe receiver with MON-VER to verify it's a CASIC device.
 
     Returns (is_casic, version_info). A NAK response proves it's CASIC
     even if MON-VER isn't supported.
 
-    Args:
-        conn: CasicConnection to the receiver
-        timeout: How long to wait for response (default 5s for slow baud rates)
+    Waits for receiver to start sending data, then retries MON-VER up to 5 times.
     """
-    result = conn.poll(MON_VER.cls, MON_VER.id, timeout=timeout)
-    if result.success:
-        return True, parse_mon_ver(result.payload)  # type: ignore[arg-type]
-    if result.nak:
-        return True, None  # NAK proves it's CASIC
-    return False, None  # Timeout - not CASIC
+    # Wait for any packet before sending query (receiver may need time to start)
+    log.debug("waiting for receiver data...")
+    if conn.receive_packet(timeout=2.0) is None:
+        log.warning("no data received from receiver, check connection and baud rate")
+    else:
+        log.debug("receiver data detected")
+
+    # Retry MON-VER query up to 5 times
+    for attempt in range(5):
+        log.debug(f"sending MON-VER query (attempt {attempt + 1}/5)")
+        result = conn.poll(MON_VER.cls, MON_VER.id, timeout=2.0)
+        if result.success:
+            log.debug("MON-VER response received")
+            return True, parse_mon_ver(result.payload)  # type: ignore[arg-type]
+        if result.nak:
+            log.debug("MON-VER NAK received (not supported but CASIC confirmed)")
+            return True, None  # NAK proves it's CASIC
+        # Timeout - retry
+        log.debug(f"MON-VER timeout after attempt {attempt + 1}")
+
+    log.debug("all MON-VER attempts failed")
+    return False, None  # All attempts timed out - not CASIC
 
 
 def query_nmea_rates(
