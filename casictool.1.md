@@ -5,7 +5,7 @@ casictool - configure a GPS receiver using CASIC protocol
 # SYNOPSIS
 
 **casictool** [**\-h**\|**\-\-help**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-device** *path*] [**\-s**\|**\-\-speed** *bps*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-device** *path*] [**\-s**\|**\-\-device-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-config**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
@@ -31,7 +31,7 @@ The **casictool** command is used to configure a GPS receiver using the CASIC pr
 **\-d**, **\-\-device** *path*
 : Path to the serial device to communicate with the GPS receiver.
 
-**\-s**, **\-\-speed** *bps*
+**\-s**, **\-\-device-speed** *bps*
 : Set the speed of the serial port (as specified by **\-d**) in bits per second.
 
 **\-\-packet\-log** *path*

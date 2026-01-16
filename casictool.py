@@ -37,8 +37,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "-d", "--device", default="/dev/ttyUSB0", help="Serial device (default: /dev/ttyUSB0)"
     )
+    # --speed will be used for changing the speed used by the GPS receiver
     parser.add_argument(
-        "-s", "--speed", type=int, default=9600, help="Baud rate (default: 9600)"
+        "-s", "--device-speed", type=int, default=9600, help="Baud rate (default: 9600)"
     )
     parser.add_argument(
         "--show-config", action="store_true", help="Show current configuration"
@@ -396,7 +397,7 @@ def run_casictool(argv: list[str]) -> CommandResult:
     # Execute the job
     try:
         with CasicConnection(
-            args.device, baudrate=args.speed, packet_log=args.packet_log
+            args.device, baudrate=args.device_speed, packet_log=args.packet_log
         ) as conn:
             # Probe receiver once (skip for factory/cold reset)
             if job.reset not in (ResetMode.FACTORY, ResetMode.COLD):
