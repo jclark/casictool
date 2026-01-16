@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 
 import serial
@@ -49,6 +50,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=str,
         metavar="PATH",
         help="Log all packets to JSONL file",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug output",
+    )
+    parser.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="Suppress info messages (only show warnings and errors)",
     )
 
     # Time mode group
@@ -346,15 +357,8 @@ def has_any_operation(job: ConfigJob) -> bool:
     )
 
 
-def print_result(result: CommandResult, job: ConfigJob) -> None:
-    """Print command result to stdout/stderr."""
-    # Print operation messages
-    for msg in result.operations:
-        if msg.startswith("Warning:"):
-            print(msg, file=sys.stderr)
-        else:
-            print(msg)
-
+def print_config(result: CommandResult, job: ConfigJob) -> None:
+    """Print --show-config output to stdout."""
     # Print configuration if show_config and no other operations
     has_config_ops = (
         job.props is not None
@@ -372,7 +376,7 @@ def print_result(result: CommandResult, job: ConfigJob) -> None:
             print(result.config_after.format())
 
 
-def run_casictool(argv: list[str]) -> CommandResult:
+def run_casictool(argv: list[str], log: logging.Logger) -> CommandResult:
     """Run casictool with given arguments.
 
     Callable from other programs. Returns structured result.
@@ -408,7 +412,7 @@ def run_casictool(argv: list[str]) -> CommandResult:
                     )
             else:
                 version = None
-            result = execute_job(conn, job)
+            result = execute_job(conn, job, log)
             result.version = version
             return result
     except serial.SerialException as e:
@@ -417,7 +421,24 @@ def run_casictool(argv: list[str]) -> CommandResult:
 
 def main() -> int:
     """CLI entry point."""
-    result = run_casictool(sys.argv[1:])
+    # Parse args early to get logging level
+    args = parse_args(sys.argv[1:])
+
+    # Setup logging
+    log = logging.getLogger("casictool")
+    handler = logging.StreamHandler(sys.stderr)
+    if args.debug:
+        level = logging.DEBUG
+    elif args.quiet:
+        level = logging.WARNING
+    else:
+        level = logging.INFO
+    handler.setLevel(level)
+    log.setLevel(level)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    log.addHandler(handler)
+
+    result = run_casictool(sys.argv[1:], log)
 
     if result.error == "no_operation":
         # Print help when no operation specified
@@ -425,13 +446,12 @@ def main() -> int:
         return 0
 
     if not result.success:
-        print(f"Error: {result.error}", file=sys.stderr)
+        print(f"error: {result.error}", file=sys.stderr)
         return 1
 
     # Build job again to check show_config flag for printing
-    args = parse_args(sys.argv[1:])
     job, _ = build_job(args)
-    print_result(result, job)
+    print_config(result, job)
 
     return 0
 

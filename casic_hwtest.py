@@ -7,6 +7,7 @@ Tests that casictool implementation works correctly on real hardware.
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from dataclasses import dataclass
 
@@ -55,10 +56,10 @@ TestResult = Pass | Fail
 # ============================================================================
 
 
-def verify(conn: CasicConnection, props: ConfigProps) -> TestResult:
+def verify(conn: CasicConnection, props: ConfigProps, log: logging.Logger) -> TestResult:
     """Apply props and verify they took effect."""
     job = ConfigJob(props=props)
-    result = execute_job(conn, job, log_file=sys.stderr)
+    result = execute_job(conn, job, log)
     if not result.success:
         return Fail({"error": {"expected": "success", "actual": result.error}})
     actual = query_config_props(conn)
@@ -73,7 +74,7 @@ def verify(conn: CasicConnection, props: ConfigProps) -> TestResult:
 
 
 def verify_persist(
-    conn: CasicConnection, props: ConfigProps, alt_props: ConfigProps
+    conn: CasicConnection, props: ConfigProps, alt_props: ConfigProps, log: logging.Logger
 ) -> TestResult:
     """Verify save/reload round-trip.
 
@@ -85,19 +86,19 @@ def verify_persist(
     """
     # Set props and save to NVM
     job = ConfigJob(props=props, save=SaveMode.CHANGES)
-    result = execute_job(conn, job, log_file=sys.stderr)
+    result = execute_job(conn, job, log)
     if not result.success:
         return Fail({"save": {"expected": "success", "actual": result.error}})
 
     # Set alt_props WITHOUT saving (changes RAM only)
     job = ConfigJob(props=alt_props)
-    result = execute_job(conn, job, log_file=sys.stderr)
+    result = execute_job(conn, job, log)
     if not result.success:
         return Fail({"alt_config": {"expected": "success", "actual": result.error}})
 
     # Reload from NVM - should restore props
     job = ConfigJob(reset=ResetMode.RELOAD)
-    result = execute_job(conn, job, log_file=sys.stderr)
+    result = execute_job(conn, job, log)
     if not result.success:
         return Fail({"reload": {"expected": "success", "actual": result.error}})
 
@@ -131,30 +132,29 @@ def format_props(props: ConfigProps) -> str:
     return "{" + ", ".join(parts) + "}"
 
 
-def print_result(props: ConfigProps, result: TestResult) -> None:
-    """Print test result."""
-    print(f"Testing: {format_props(props)}")
+def log_result(log: logging.Logger, props: ConfigProps, result: TestResult) -> None:
+    """Log test result."""
     if isinstance(result, Pass):
-        print("  PASS")
+        log.info(f"PASS {format_props(props)}")
     else:
         for key, vals in result.mismatches.items():
-            print(f"  FAIL: {key}: expected {vals['expected']}, got {vals['actual']}")
+            log.error(f"FAIL {key}: expected {vals['expected']}, got {vals['actual']}")
 
 
 def run_tests(
     conn: CasicConnection,
     name: str,
     tests: list[ConfigProps],
+    log: logging.Logger,
 ) -> tuple[int, int, list[ConfigProps]]:
     """Run a list of tests and return (passed, total, failed_tests)."""
-    print(f"\n=== {name} Tests ===\n")
+    log.info(f"[{name}]")
     passed = 0
     failed: list[ConfigProps] = []
 
     for props in tests:
-        result = verify(conn, props)
-        print_result(props, result)
-        print()
+        result = verify(conn, props, log)
+        log_result(log, props, result)
         if isinstance(result, Pass):
             passed += 1
         else:
@@ -163,18 +163,22 @@ def run_tests(
     return passed, len(tests), failed
 
 
-def print_summary(results: dict[str, tuple[int, int, list[ConfigProps]]]) -> int:
-    """Print summary and return exit code (0 if all passed)."""
-    print("=== Summary ===")
+def log_summary(log: logging.Logger, results: dict[str, tuple[int, int, list[ConfigProps]]]) -> int:
+    """Log summary and return exit code (0 if all passed)."""
     all_passed = True
+    total_passed = 0
+    total_tests = 0
 
-    for name, (passed, total, failed) in results.items():
-        status = f"{passed}/{total} passed"
-        print(f"{name}: {status}")
+    for _name, (passed, total, failed) in results.items():
+        total_passed += passed
+        total_tests += total
         if failed:
             all_passed = False
-            for props in failed:
-                print(f"  FAIL: {format_props(props)}")
+
+    if all_passed:
+        log.info(f"{total_passed}/{total_tests} passed")
+    else:
+        log.error(f"{total_passed}/{total_tests} passed")
 
     return 0 if all_passed else 1
 
@@ -183,29 +187,27 @@ def run_persist_tests(
     conn: CasicConnection,
     name: str,
     tests: list[ConfigProps],
+    log: logging.Logger,
 ) -> tuple[int, int, list[ConfigProps]]:
     """Run persist tests for a list of ConfigProps.
 
     For each test, use the next item in the list as alt_props (wrap around for last).
     """
-    print(f"\n=== {name} Persist Tests ===\n")
+    log.info(f"[{name} persist]")
     passed = 0
     failed: list[ConfigProps] = []
 
     for i, props in enumerate(tests):
         # Use next item as alt_props (wrap around)
         alt_props = tests[(i + 1) % len(tests)]
-        print(f"Testing persist: {format_props(props)}")
-        print(f"  alt_props: {format_props(alt_props)}")
-        result = verify_persist(conn, props, alt_props)
+        result = verify_persist(conn, props, alt_props, log)
         if isinstance(result, Pass):
-            print("  PASS")
+            log.info(f"PASS persist {format_props(props)}")
             passed += 1
         else:
             for key, vals in result.mismatches.items():
-                print(f"  FAIL: {key}: expected {vals['expected']}, got {vals['actual']}")
+                log.error(f"FAIL {key}: expected {vals['expected']}, got {vals['actual']}")
             failed.append(props)
-        print()
 
     return passed, len(tests), failed
 
@@ -284,8 +286,32 @@ def main() -> int:
     parser.add_argument(
         "-l", "--packet-log", type=str, metavar="PATH", help="Log all packets to JSONL file"
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug output",
+    )
+    parser.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="Suppress info messages (only show warnings and errors)",
+    )
 
     args = parser.parse_args()
+
+    # Setup logging (output to stdout for hwtest)
+    log = logging.getLogger("casic_hwtest")
+    handler = logging.StreamHandler(sys.stdout)
+    if args.debug:
+        level = logging.DEBUG
+    elif args.quiet:
+        level = logging.WARNING
+    else:
+        level = logging.INFO
+    handler.setLevel(level)
+    log.setLevel(level)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    log.addHandler(handler)
 
     # Determine which tests to run
     run_gnss = args.gnss or args.all
@@ -304,19 +330,19 @@ def main() -> int:
     try:
         conn = CasicConnection(args.device, args.speed, packet_log=args.packet_log)
     except Exception as e:
-        print(f"Error: Could not connect to {args.device}: {e}", file=sys.stderr)
+        log.error(f"error: could not connect to {args.device}: {e}")
         return 1
 
     # Probe receiver once at startup
     is_casic, version = probe_receiver(conn)
     if not is_casic:
-        print("Error: No response from receiver. Not a CASIC device?", file=sys.stderr)
+        log.error("error: no response from receiver")
         conn.close()
         return 1
     if version:
-        print(f"CASIC receiver: {version.sw_version}")
+        log.info(f"receiver: {version.sw_version}")
     else:
-        print("CASIC receiver detected (MON-VER not supported)")
+        log.info("receiver: CASIC (MON-VER not supported)")
 
     results: dict[str, tuple[int, int, list[ConfigProps]]] = {}
 
@@ -324,41 +350,41 @@ def main() -> int:
         # Run normal (RAM-only) tests if not --persist-only mode
         if not run_persist or (run_gnss or run_nmea or run_time_mode or run_pps):
             if run_gnss:
-                results["GNSS"] = run_tests(conn, "GNSS Configuration", GNSS_TESTS)
+                results["GNSS"] = run_tests(conn, "GNSS", GNSS_TESTS, log)
 
             if run_nmea:
-                results["NMEA"] = run_tests(conn, "NMEA Output", NMEA_TESTS)
+                results["NMEA"] = run_tests(conn, "NMEA", NMEA_TESTS, log)
 
             if run_time_mode:
-                results["Time Mode"] = run_tests(conn, "Time Mode", TIME_MODE_TESTS)
+                results["Time Mode"] = run_tests(conn, "time-mode", TIME_MODE_TESTS, log)
 
             if run_pps:
-                results["PPS"] = run_tests(conn, "PPS", PPS_TESTS)
+                results["PPS"] = run_tests(conn, "PPS", PPS_TESTS, log)
 
         # Run persist tests if --persist specified
         if run_persist:
             if run_gnss:
                 results["GNSS Persist"] = run_persist_tests(
-                    conn, "GNSS Configuration", GNSS_TESTS
+                    conn, "GNSS", GNSS_TESTS, log
                 )
 
             if run_nmea:
                 results["NMEA Persist"] = run_persist_tests(
-                    conn, "NMEA Output", NMEA_TESTS
+                    conn, "NMEA", NMEA_TESTS, log
                 )
 
             if run_time_mode:
                 results["Time Mode Persist"] = run_persist_tests(
-                    conn, "Time Mode", TIME_MODE_TESTS
+                    conn, "time-mode", TIME_MODE_TESTS, log
                 )
 
             if run_pps:
-                results["PPS Persist"] = run_persist_tests(conn, "PPS", PPS_TESTS)
+                results["PPS Persist"] = run_persist_tests(conn, "PPS", PPS_TESTS, log)
 
     finally:
         conn.close()
 
-    return print_summary(results)
+    return log_summary(log, results)
 
 
 if __name__ == "__main__":

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import sys
-from dataclasses import dataclass, field
+import logging
+from dataclasses import dataclass
 from enum import Enum
-from typing import TextIO, TypedDict
+from typing import TypedDict
 
 from casic import (
     BBR_ALL,
@@ -167,7 +167,6 @@ class CommandResult:
     config_before: ReceiverConfig | None = None
     config_after: ReceiverConfig | None = None
     version: VersionInfo | None = None
-    operations: list[str] = field(default_factory=list)
     success: bool = True
     error: str | None = None
 
@@ -620,7 +619,7 @@ def check_config(target: ConfigProps, actual: ConfigProps) -> dict[str, dict[str
 def execute_job(
     conn: CasicConnection,
     job: ConfigJob,
-    log_file: TextIO = sys.stderr,
+    log: logging.Logger,
 ) -> CommandResult:
     """Execute configuration job and return structured result.
 
@@ -635,10 +634,11 @@ def execute_job(
         if "gnss" in job.props:
             mask = gnss_set_to_mask(job.props["gnss"])
             if set_gnss(conn, mask):
-                systems = [g.value for g in job.props["gnss"]]
-                result.operations.append(f"GNSS constellations set: {', '.join(systems)}")
+                systems = sorted(g.value for g in job.props["gnss"])
+                log.info(f"GNSS set: {', '.join(systems)}")
                 changes.mark_nav()
             else:
+                log.error("error: failed to set GNSS")
                 result.success = False
                 result.error = "Failed to set GNSS constellations"
                 return result
@@ -648,30 +648,29 @@ def execute_job(
             time_mode = job.props["time_mode"]
             if isinstance(time_mode, MobileMode):
                 if set_mobile_mode(conn):
-                    result.operations.append("Mobile/auto mode enabled")
+                    log.info("mobile mode enabled")
                     changes.mark_nav()
                 else:
+                    log.error("error: failed to set mobile mode")
                     result.success = False
                     result.error = "Failed to set mobile mode"
                     return result
             elif isinstance(time_mode, SurveyMode):
                 if set_survey_mode(conn, time_mode.min_dur, time_mode.acc):
-                    result.operations.append(
-                        f"Survey-in mode enabled: {time_mode.min_dur}s, {time_mode.acc}m accuracy"
-                    )
+                    log.info(f"survey-in mode: {time_mode.min_dur}s, {time_mode.acc}m")
                     changes.mark_nav()
                 else:
+                    log.error("error: failed to set survey-in mode")
                     result.success = False
                     result.error = "Failed to set survey-in mode"
                     return result
             elif isinstance(time_mode, FixedMode):
                 if set_fixed_position(conn, time_mode.ecef, time_mode.acc):
                     ecef = time_mode.ecef
-                    result.operations.append(
-                        f"Fixed position set: ECEF ({ecef[0]:.3f}, {ecef[1]:.3f}, {ecef[2]:.3f})"
-                    )
+                    log.info(f"fixed position: ECEF ({ecef[0]:.3f}, {ecef[1]:.3f}, {ecef[2]:.3f})")
                     changes.mark_nav()
                 else:
+                    log.error("error: failed to set fixed position")
                     result.success = False
                     result.error = "Failed to set fixed position"
                     return result
@@ -682,19 +681,21 @@ def execute_job(
             # Set pulse width
             if set_pps(conn, tp.width):
                 if tp.width == 0:
-                    result.operations.append("PPS disabled")
+                    log.info("PPS disabled")
                 else:
-                    result.operations.append(f"PPS enabled: {tp.width}s pulse width")
+                    log.info(f"PPS: {tp.width}s width")
                 changes.mark_tp()
             else:
+                log.error("error: failed to configure PPS")
                 result.success = False
                 result.error = "Failed to configure PPS"
                 return result
             # Set time source
             if set_time_gnss(conn, tp.time_gnss.value):
-                result.operations.append(f"PPS time source set to {tp.time_gnss.value}")
+                log.info(f"PPS time source: {tp.time_gnss.value}")
                 changes.mark_tp()
             else:
+                log.error("error: failed to set PPS time source")
                 result.success = False
                 result.error = "Failed to set PPS time source"
                 return result
@@ -707,11 +708,12 @@ def execute_job(
                 target_rate = nmea_out[nmea.value]
                 if set_nmea_message_rate(conn, nmea.name, target_rate):
                     if target_rate > 0:
-                        result.operations.append(f"Enabled {nmea.name}")
+                        log.info(f"NMEA {nmea.name} enabled")
                     else:
-                        result.operations.append(f"Disabled {nmea.name}")
+                        log.info(f"NMEA {nmea.name} disabled")
                     changes.mark_msg()
                 else:
+                    log.error(f"error: failed to set NMEA {nmea.name}")
                     result.success = False
                     result.error = f"Failed to {'enable' if target_rate > 0 else 'disable'} {nmea.name}"
                     return result
@@ -719,18 +721,20 @@ def execute_job(
     # Execute NVM save operations (after configuration changes)
     if job.save == SaveMode.ALL:
         if save_config(conn, CFG_MASK_ALL):
-            result.operations.append("All configuration saved to NVM")
+            log.info("config saved to NVM")
         else:
+            log.error("error: failed to save config")
             result.success = False
             result.error = "Failed to save configuration"
             return result
     elif job.save == SaveMode.CHANGES:
         if changes.mask == 0:
-            result.operations.append("Warning: No configuration changes to save")
+            log.warning("warning: no config changes to save")
         else:
             if save_config(conn, changes.mask):
-                result.operations.append("Configuration saved to NVM")
+                log.info("config saved to NVM")
             else:
+                log.error("error: failed to save config")
                 result.success = False
                 result.error = "Failed to save configuration"
                 return result
@@ -738,17 +742,18 @@ def execute_job(
     # Execute reset operations (after save)
     if job.reset == ResetMode.RELOAD:
         if load_config(conn, CFG_MASK_ALL):
-            result.operations.append("Configuration reloaded from NVM")
+            log.info("config reloaded from NVM")
         else:
+            log.error("error: failed to reload config")
             result.success = False
             result.error = "Failed to reload configuration"
             return result
     elif job.reset == ResetMode.COLD:
         reset_receiver(conn, factory=False)
-        result.operations.append("Cold start reset initiated")
+        log.info("cold start initiated")
     elif job.reset == ResetMode.FACTORY:
         reset_receiver(conn, factory=True)
-        result.operations.append("Factory reset initiated")
+        log.info("factory reset initiated")
 
     # Query config after operations (unless reset was performed)
     if job.reset not in (ResetMode.FACTORY, ResetMode.COLD):
