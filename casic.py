@@ -482,8 +482,6 @@ class MessageRatesConfig:
     rates: dict[str, int]  # message name -> rate (0=off, 1=every fix, N=every N fixes)
 
     def format(self) -> str:
-        if not self.rates:
-            return "NMEA messages: (not queried)"
         enabled = [name for name, rate in self.rates.items() if rate > 0]
         if enabled:
             return f"NMEA messages enabled: {', '.join(enabled)}"

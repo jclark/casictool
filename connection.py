@@ -37,6 +37,10 @@ def _extract_nmea_msg_type(sentence: str) -> str:
 
 READ_CHUNK_SIZE = 256
 
+# Timeout constants for query/response handling
+INITIAL_TIMEOUT = 5.0  # wait for first/only response (receiver may be slow)
+SUBSEQUENT_TIMEOUT = 0.5  # wait for additional responses in multi-response queries
+
 
 
 @dataclass
@@ -255,7 +259,7 @@ class CasicConnection:
 
         return False
 
-    def poll(self, cls: int, id: int, payload: bytes = b"", timeout: float = 2.0) -> PollResult:
+    def poll(self, cls: int, id: int, payload: bytes = b"", timeout: float = INITIAL_TIMEOUT) -> PollResult:
         """Send query and wait for response.
 
         Returns PollResult with:

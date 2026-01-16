@@ -368,10 +368,7 @@ def print_config(result: CommandResult, job: ConfigJob) -> None:
 
     if job.show_config and not has_config_ops:
         if result.version:
-            print(f"CASIC receiver: {result.version.sw_version} / {result.version.hw_version}")
-        else:
-            print("CASIC receiver detected (MON-VER not supported)")
-        print()
+            print(f"Receiver version: {result.version.sw_version} / {result.version.hw_version}")
         if result.config_after:
             print(result.config_after.format())
 

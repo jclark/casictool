@@ -8,6 +8,8 @@ from enum import Enum
 from typing import TypedDict
 
 from casic import (
+    ACK_ACK,
+    ACK_NAK,
     BBR_ALL,
     BBR_NAV_DATA,
     CFG_CFG,
@@ -42,7 +44,7 @@ from casic import (
     parse_cfg_tp,
     parse_mon_ver,
 )
-from connection import CasicConnection, PollResult
+from connection import INITIAL_TIMEOUT, SUBSEQUENT_TIMEOUT, CasicConnection
 
 # ============================================================================
 # Enums
@@ -223,10 +225,10 @@ def probe_receiver(
         log.debug(f"sending MON-VER query (attempt {attempt + 1}/5)")
         result = conn.poll(MON_VER.cls, MON_VER.id, timeout=2.0)
         if result.success:
-            log.debug("MON-VER response received")
+            log.info("CASIC receiver detected")
             return True, parse_mon_ver(result.payload)  # type: ignore[arg-type]
         if result.nak:
-            log.debug("MON-VER NAK received (not supported but CASIC confirmed)")
+            log.info("CASIC receiver detected (MON-VER not supported)")
             return True, None  # NAK proves it's CASIC
         # Timeout - retry
         log.debug(f"MON-VER timeout after attempt {attempt + 1}")
@@ -237,7 +239,7 @@ def probe_receiver(
 
 def query_nmea_rates(
     conn: CasicConnection, log: logging.Logger | None = None
-) -> MessageRatesConfig:
+) -> MessageRatesConfig | None:
     """Query NMEA message output rates via CFG-MSG.
 
     CFG-MSG query with empty payload returns all configured message rates.
@@ -249,21 +251,36 @@ def query_nmea_rates(
     rates: dict[str, int] = {}
     conn.send(CFG_MSG.cls, CFG_MSG.id, b"")
 
-    # Collect all CFG-MSG responses
+    # Collect all CFG-MSG responses (two-tier timeouts)
+    # Wait for responses - use long timeout until we get a real CFG-MSG response
+    got_response = False
     while True:
-        result = conn.receive(timeout=0.3)
+        timeout = SUBSEQUENT_TIMEOUT if got_response else INITIAL_TIMEOUT
+        result = conn.receive(timeout=timeout)
         if result is None:
             break
         recv_id, recv_payload = result
+        # Check for ACK/NAK - if it's for our query, keep waiting
+        if recv_id == ACK_ACK or recv_id == ACK_NAK:
+            if len(recv_payload) >= 2 and recv_payload[0] == CFG_MSG.cls and recv_payload[1] == CFG_MSG.id:
+                if recv_id == ACK_NAK:
+                    break  # NAK means query not supported
+                continue  # ACK means keep waiting for actual response
+        # Check for actual CFG-MSG response
         if recv_id.cls == CFG_MSG.cls and recv_id.id == CFG_MSG.id and len(recv_payload) >= 4:
             msg_cls, msg_id, rate = recv_payload[0], recv_payload[1], parse_cfg_msg(recv_payload)
             name = nmea_lookup.get((msg_cls, msg_id))
             if name:
                 rates[name] = rate
+            got_response = True
 
-    if not rates and log:
-        log.debug("CFG-MSG query returned no NMEA rates")
+    if not rates:
+        if log:
+            log.warning("no response to NMEA message rate configuration (CFG-MSG) query")
+        return None
 
+    if log:
+        log.info("got NMEA message rate configuration")
     return MessageRatesConfig(rates=rates)
 
 
@@ -271,59 +288,84 @@ def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> Re
     """Query all CFG messages and return receiver configuration."""
     config = ReceiverConfig()
 
-    def _log_failure(name: str, result: PollResult) -> None:
+    def _log_failure(feature: str, msg_name: str, nak: bool) -> None:
         if log:
-            if result.nak:
-                log.debug(f"{name} query rejected (NAK)")
+            if nak:
+                log.warning(f"{feature} ({msg_name}) not supported by receiver")
             else:
-                log.debug(f"{name} query timeout")
+                log.warning(f"no response to {feature} ({msg_name}) query")
 
-    # Query CFG-PRT (may return multiple responses, one per port)
-    ports: list[PortConfig] = []
-    conn.send(CFG_PRT.cls, CFG_PRT.id, b"")
-    while True:
-        prt_result = conn.receive(timeout=0.3)
-        if prt_result is None:
-            break
-        recv_id, recv_payload = prt_result
-        if recv_id.cls == CFG_PRT.cls and recv_id.id == CFG_PRT.id and len(recv_payload) >= 8:
-            ports.append(parse_cfg_prt(recv_payload))
-    if ports:
-        # Sort by port_id so UART0 comes first
-        config.ports = sorted(ports, key=lambda p: p.port_id)
-    elif log:
-        log.debug("CFG-PRT query returned no responses")
+    # Single-response queries first (use INITIAL_TIMEOUT via poll default)
 
     # Query CFG-RATE
     result = conn.poll(CFG_RATE.cls, CFG_RATE.id)
     if result.success:
         config.rate = parse_cfg_rate(result.payload)  # type: ignore[arg-type]
+        if log:
+            log.info("got navigation solution rate configuration")
     else:
-        _log_failure("CFG-RATE", result)
-
-    # Query NMEA message rates via CFG-MSG
-    config.message_rates = query_nmea_rates(conn, log)
+        _log_failure("navigation solution rate configuration", "CFG-RATE", result.nak)
 
     # Query CFG-TP
     result = conn.poll(CFG_TP.cls, CFG_TP.id)
     if result.success:
         config.time_pulse = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
+        if log:
+            log.info("got time pulse configuration")
     else:
-        _log_failure("CFG-TP", result)
+        _log_failure("time pulse configuration", "CFG-TP", result.nak)
 
     # Query CFG-TMODE
     result = conn.poll(CFG_TMODE.cls, CFG_TMODE.id)
     if result.success:
         config.timing_mode = parse_cfg_tmode(result.payload)  # type: ignore[arg-type]
+        if log:
+            log.info("got time mode configuration")
     else:
-        _log_failure("CFG-TMODE", result)
+        _log_failure("time mode configuration", "CFG-TMODE", result.nak)
 
     # Query CFG-NAVX
     result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
     if result.success:
         config.nav_engine = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
+        if log:
+            log.info("got GNSS configuration")
     else:
-        _log_failure("CFG-NAVX", result)
+        _log_failure("GNSS configuration", "CFG-NAVX", result.nak)
+
+    # Multi-response queries last (two-tier timeouts)
+
+    # Query CFG-PRT (may return multiple responses, one per port)
+    ports: list[PortConfig] = []
+    conn.send(CFG_PRT.cls, CFG_PRT.id, b"")
+    # Wait for responses - use long timeout until we get a real CFG-PRT response
+    got_response = False
+    while True:
+        timeout = SUBSEQUENT_TIMEOUT if got_response else INITIAL_TIMEOUT
+        prt_result = conn.receive(timeout=timeout)
+        if prt_result is None:
+            break
+        recv_id, recv_payload = prt_result
+        # Check for ACK/NAK - if it's for our query, keep waiting
+        if recv_id == ACK_ACK or recv_id == ACK_NAK:
+            if len(recv_payload) >= 2 and recv_payload[0] == CFG_PRT.cls and recv_payload[1] == CFG_PRT.id:
+                if recv_id == ACK_NAK:
+                    break  # NAK means query not supported
+                continue  # ACK means keep waiting for actual response
+        # Check for actual CFG-PRT response
+        if recv_id.cls == CFG_PRT.cls and recv_id.id == CFG_PRT.id and len(recv_payload) >= 8:
+            ports.append(parse_cfg_prt(recv_payload))
+            got_response = True
+    if ports:
+        # Sort by port_id so UART0 comes first
+        config.ports = sorted(ports, key=lambda p: p.port_id)
+        if log:
+            log.info("got serial port configuration")
+    elif log:
+        log.warning("no response to serial port configuration (CFG-PRT) query")
+
+    # Query NMEA message rates via CFG-MSG
+    config.message_rates = query_nmea_rates(conn, log)
 
     return config
 
@@ -632,7 +674,7 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
 
     # Query NMEA message rates
     rates = query_nmea_rates(conn)
-    if rates.rates:
+    if rates is not None and rates.rates:
         nmea_out: NMEARates = [0] * len(NMEA)
         for name, rate in rates.rates.items():
             try:
