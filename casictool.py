@@ -83,7 +83,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Fixed position accuracy in meters (default: 1)",
     )
     time_mode_group.add_argument(
-        "--mobile", action="store_true", help="Enable mobile/auto mode (disable timing mode)"
+        "--mobile", action="store_true", help="Disable timing mode"
     )
 
     # NMEA message output group
@@ -103,9 +103,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--gnss",
         type=str,
         metavar="SYSTEMS",
-        help="Enable GNSS constellations (GPS,GAL,BDS,GLO). "
-        "Disables constellations not listed. "
-        "Note: QZSS, NAVIC, SBAS not supported by this receiver.",
+        help="Comma-separated list of GNSS constellations (GPS,GAL,BDS,GLO) that should be enabled. "
+        "Constellations not listed will be disabled."
     )
 
     # Time pulse (PPS) group
@@ -124,7 +123,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
 
     # NVM operations group
-    nvm_group = parser.add_argument_group("Configuration Storage")
+    nvm_group = parser.add_argument_group("Non-volatile Memory (NVM) Operations")
     nvm_group.add_argument(
         "--save",
         action="store_true",
