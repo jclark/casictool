@@ -600,7 +600,7 @@ class TestParseNmeaOut:
 
     def test_invalid_message(self) -> None:
         """Test invalid message name raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown NMEA message: INVALID"):
+        with pytest.raises(ValueError, match="unknown NMEA message: INVALID"):
             parse_nmea_out("GGA,INVALID")
 
     def test_all_valid_messages(self) -> None:
@@ -731,7 +731,7 @@ class TestParseGnssArg:
 
     def test_invalid_constellation(self) -> None:
         """Test invalid constellation raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown constellation"):
+        with pytest.raises(ValueError, match="unknown constellation"):
             parse_gnss_arg("INVALID")
 
     def test_supported_galileo(self) -> None:
@@ -741,7 +741,7 @@ class TestParseGnssArg:
 
     def test_unknown_qzss(self) -> None:
         """Test QZSS raises unknown constellation error."""
-        with pytest.raises(ValueError, match="Unknown constellation.*QZSS"):
+        with pytest.raises(ValueError, match="unknown constellation.*QZSS"):
             parse_gnss_arg("QZSS")
 
     def test_empty_string(self) -> None:

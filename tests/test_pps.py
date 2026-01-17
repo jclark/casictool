@@ -136,7 +136,7 @@ class TestParseTimeGnssArg:
 
     def test_invalid_system(self) -> None:
         """Test invalid system raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown time source"):
+        with pytest.raises(ValueError, match="unknown time source"):
             parse_time_gnss_arg("QZSS")
 
     def test_valid_galileo(self) -> None:
@@ -146,7 +146,7 @@ class TestParseTimeGnssArg:
 
     def test_empty_string(self) -> None:
         """Test empty string raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown time source"):
+        with pytest.raises(ValueError, match="unknown time source"):
             parse_time_gnss_arg("")
 
 

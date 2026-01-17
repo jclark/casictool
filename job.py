@@ -726,9 +726,8 @@ def execute_job(
                 log.info(f"GNSS set: {', '.join(systems)}")
                 changes.mark_nav()
             else:
-                log.error("failed to set GNSS")
                 result.success = False
-                result.error = "Failed to set GNSS constellations"
+                result.error = "failed to set GNSS constellations"
                 return result
 
         # Apply timing mode configuration
@@ -739,18 +738,16 @@ def execute_job(
                     log.info("mobile mode enabled")
                     changes.mark_nav()
                 else:
-                    log.error("failed to set mobile mode")
                     result.success = False
-                    result.error = "Failed to set mobile mode"
+                    result.error = "failed to set mobile mode"
                     return result
             elif isinstance(time_mode, SurveyMode):
                 if set_survey_mode(conn, time_mode.min_dur, time_mode.acc):
                     log.info(f"survey-in mode: {time_mode.min_dur}s, {time_mode.acc}m")
                     changes.mark_nav()
                 else:
-                    log.error("failed to set survey-in mode")
                     result.success = False
-                    result.error = "Failed to set survey-in mode"
+                    result.error = "failed to set survey-in mode"
                     return result
             elif isinstance(time_mode, FixedMode):
                 if set_fixed_position(conn, time_mode.ecef, time_mode.acc):
@@ -758,9 +755,8 @@ def execute_job(
                     log.info(f"fixed position: ECEF ({ecef[0]:.3f}, {ecef[1]:.3f}, {ecef[2]:.3f})")
                     changes.mark_nav()
                 else:
-                    log.error("failed to set fixed position")
                     result.success = False
-                    result.error = "Failed to set fixed position"
+                    result.error = "failed to set fixed position"
                     return result
 
         # Apply time pulse configuration
@@ -774,18 +770,16 @@ def execute_job(
                     log.info(f"PPS: {tp.width}s width")
                 changes.mark_tp()
             else:
-                log.error("failed to configure PPS")
                 result.success = False
-                result.error = "Failed to configure PPS"
+                result.error = "failed to configure PPS"
                 return result
             # Set time source
             if set_time_gnss(conn, tp.time_gnss.value):
                 log.info(f"PPS time source: {tp.time_gnss.value}")
                 changes.mark_tp()
             else:
-                log.error("failed to set PPS time source")
                 result.success = False
-                result.error = "Failed to set PPS time source"
+                result.error = "failed to set PPS time source"
                 return result
 
         # Apply NMEA output configuration
@@ -801,9 +795,8 @@ def execute_job(
                         log.info(f"NMEA {nmea.name} disabled")
                     changes.mark_msg()
                 else:
-                    log.error(f"failed to set NMEA {nmea.name}")
                     result.success = False
-                    result.error = f"Failed to {'enable' if target_rate > 0 else 'disable'} {nmea.name}"
+                    result.error = f"failed to {'enable' if target_rate > 0 else 'disable'} NMEA {nmea.name}"
                     return result
 
     # Execute NVM save operations (after configuration changes)
@@ -811,9 +804,8 @@ def execute_job(
         if save_config(conn, CFG_MASK_ALL):
             log.info("config saved to NVM")
         else:
-            log.error("failed to save config")
             result.success = False
-            result.error = "Failed to save configuration"
+            result.error = "failed to save configuration"
             return result
     elif job.save == SaveMode.CHANGES:
         if changes.mask == 0:
@@ -822,9 +814,8 @@ def execute_job(
             if save_config(conn, changes.mask):
                 log.info("config saved to NVM")
             else:
-                log.error("failed to save config")
                 result.success = False
-                result.error = "Failed to save configuration"
+                result.error = "failed to save configuration"
                 return result
 
     # Execute reset operations (after save)
@@ -832,9 +823,8 @@ def execute_job(
         if load_config(conn, CFG_MASK_ALL):
             log.info("config reloaded from NVM")
         else:
-            log.error("failed to reload config")
             result.success = False
-            result.error = "Failed to reload configuration"
+            result.error = "failed to reload configuration"
             return result
     elif job.reset == ResetMode.COLD:
         reset_receiver(conn, factory=False)
