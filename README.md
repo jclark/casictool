@@ -1,6 +1,7 @@
 # casictool
 
-A command-line tool for configuring GPS receivers using CASIC binary protocol.
+A command-line tool for configuring GPS receivers using the CASIC binary protocol.
+[Zhongke Microsysystems](https://www.icofchina.com/) make a range of very inexpensive GPS receivers (ATGM33\*) which use this protocol.
 
 ## Caveat
 
@@ -54,12 +55,12 @@ casictool -d /dev/ttyUSB0 -s 9600 --survey --survey-time 3600
 casictool -d /dev/ttyUSB0 -s 9600 --fixed-pos-ecef -2430000,4700000,3560000 --fixed-pos-acc 0.5
 
 # Configure PPS output (pulse width in seconds)
-casictool -d /dev/ttyUSB0 -s 9600 --pps 0.1--time-gnss GPS
+casictool -d /dev/ttyUSB0 -s 9600 --pps 0.1 --time-gnss GPS
 ```
 
 ## CASIC binary protocol information
 
-As part of this exercise I got an AI (Gemini 3 Pro) to translate a Chinese PDF spec into [English](spec/casic.md) in Markdown (convenient for input to an AI).
+As part of this exercise I got an AI (Gemini 3 Pro) to translate a Chinese PDF spec into [English](spec/README.md) in Markdown (convenient for input to an AI).
 
 ## Tested Hardware
 
