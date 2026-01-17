@@ -149,7 +149,7 @@ def run_tests(
     log: logging.Logger,
 ) -> tuple[int, int, list[ConfigProps]]:
     """Run a list of tests and return (passed, total, failed_tests)."""
-    log.info(f"[{name}]")
+    log.info(f"running {name} tests")
     passed = 0
     failed: list[ConfigProps] = []
 
@@ -180,6 +180,16 @@ def log_summary(log: logging.Logger, results: dict[str, tuple[int, int, list[Con
         log.info(f"{total_passed}/{total_tests} passed")
     else:
         log.error(f"{total_passed}/{total_tests} passed")
+        # Collect failed tests for summary
+        failures = [
+            (name, props)
+            for name, (_passed, _total, failed) in results.items()
+            for props in failed
+        ]
+        if failures:
+            log.error("failed tests:")
+            for name, props in failures:
+                log.error(f"  {name}: {format_props(props)}")
 
     return 0 if all_passed else 1
 
@@ -194,7 +204,7 @@ def run_persist_tests(
 
     For each test, use the next item in the list as alt_props (wrap around for last).
     """
-    log.info(f"[{name} persist]")
+    log.info(f"running {name} persist tests")
     passed = 0
     failed: list[ConfigProps] = []
 
@@ -355,7 +365,7 @@ def main() -> int:
                 results["GNSS"] = run_tests(conn, "GNSS", GNSS_TESTS, log)
 
             if run_time_mode:
-                results["Time Mode"] = run_tests(conn, "time-mode", TIME_MODE_TESTS, log)
+                results["Time Mode"] = run_tests(conn, "time mode", TIME_MODE_TESTS, log)
 
             if run_pps:
                 results["PPS"] = run_tests(conn, "PPS", PPS_TESTS, log)
