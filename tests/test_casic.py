@@ -579,7 +579,7 @@ class TestParseNmeaOut:
     def test_basic(self) -> None:
         """Test parsing messages to enable."""
         enable = parse_nmea_out("GGA,RMC,ZDA")
-        # GGA=0, RMC=4, ZDA=6
+        # GGA=0, GLL=1, GSA=2, GSV=3, RMC=4, VTG=5, ZDA=6
         assert enable == [1, 0, 0, 0, 1, 0, 1]
 
     def test_case_insensitive(self) -> None:
@@ -595,7 +595,7 @@ class TestParseNmeaOut:
     def test_empty_items_ignored(self) -> None:
         """Test empty items in comma list are ignored."""
         enable = parse_nmea_out("GGA,,RMC,")
-        # GGA=0, RMC=4
+        # GGA=0, GLL=1, GSA=2, GSV=3, RMC=4, VTG=5, ZDA=6
         assert enable == [1, 0, 0, 0, 1, 0, 0]
 
     def test_invalid_message(self) -> None:

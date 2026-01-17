@@ -218,22 +218,21 @@ def run_persist_tests(
 # ============================================================================
 
 GNSS_TESTS: list[ConfigProps] = [
-    {"gnss": {GNSS.GPS}},
+    {"gnss": {GNSS.GPS, GNSS.BDS, GNSS.GLO}},
+    {"gnss": {GNSS.GPS, GNSS.BDS}},
     {"gnss": {GNSS.BDS}},
     {"gnss": {GNSS.GLO}},
-    {"gnss": {GNSS.GPS, GNSS.BDS}},
-    {"gnss": {GNSS.GPS, GNSS.BDS, GNSS.GLO}},
+    # Good state: just GPS (last test leaves receiver in clean state)
+    {"gnss": {GNSS.GPS}},
 ]
 
 NMEA_TESTS: list[ConfigProps] = [
+    # Multiple messages (no GSV - too much bandwidth at low baud rates)
+    {"nmea_out": nmea_rates(GGA=1, RMC=1, GLL=1)},
     # Single message
     {"nmea_out": nmea_rates(GGA=1)},
-    # Multiple messages
-    {"nmea_out": nmea_rates(GGA=1, RMC=1, GSV=1)},
-    # Different single message
+    # Good state: just RMC enabled (last test leaves receiver in clean state)
     {"nmea_out": nmea_rates(RMC=1)},
-    # All messages
-    {"nmea_out": nmea_rates(GGA=1, GLL=1, GSA=1, GSV=1, RMC=1, VTG=1, ZDA=1)},
 ]
 
 # Sample ECEF position for testing
@@ -252,14 +251,12 @@ TIME_MODE_TESTS: list[ConfigProps] = [
 ]
 
 PPS_TESTS: list[ConfigProps] = [
-    # GPS time source with 100us pulse
-    {"time_pulse": TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GPS)},
     # BDS time source with 1ms pulse
     {"time_pulse": TimePulse(period=1.0, width=0.001, time_gnss=GNSS.BDS)},
-    # GLONASS time source
+    # GLONASS time source with 100us pulse
     {"time_pulse": TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GLO)},
-    # Back to GPS
-    {"time_pulse": TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GPS)},
+    # Good state: GPS time source with 0.1s pulse (last test leaves receiver in clean state)
+    {"time_pulse": TimePulse(period=1.0, width=0.1, time_gnss=GNSS.GPS)},
 ]
 
 
@@ -349,12 +346,13 @@ def main() -> int:
 
     try:
         # Run normal (RAM-only) tests if not --persist-only mode
+        # NMEA runs first to minimize output before other tests
         if not run_persist or (run_gnss or run_nmea or run_time_mode or run_pps):
-            if run_gnss:
-                results["GNSS"] = run_tests(conn, "GNSS", GNSS_TESTS, log)
-
             if run_nmea:
                 results["NMEA"] = run_tests(conn, "NMEA", NMEA_TESTS, log)
+
+            if run_gnss:
+                results["GNSS"] = run_tests(conn, "GNSS", GNSS_TESTS, log)
 
             if run_time_mode:
                 results["Time Mode"] = run_tests(conn, "time-mode", TIME_MODE_TESTS, log)
@@ -364,14 +362,14 @@ def main() -> int:
 
         # Run persist tests if --persist specified
         if run_persist:
-            if run_gnss:
-                results["GNSS Persist"] = run_persist_tests(
-                    conn, "GNSS", GNSS_TESTS, log
-                )
-
             if run_nmea:
                 results["NMEA Persist"] = run_persist_tests(
                     conn, "NMEA", NMEA_TESTS, log
+                )
+
+            if run_gnss:
+                results["GNSS Persist"] = run_persist_tests(
+                    conn, "GNSS", GNSS_TESTS, log
                 )
 
             if run_time_mode:

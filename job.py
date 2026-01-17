@@ -61,7 +61,7 @@ class GNSS(Enum):
 
 
 class NMEA(Enum):
-    """NMEA sentence types. Values are indices into NMEARates list."""
+    """NMEA sentence types in alphabetical order."""
 
     GGA = 0
     GLL = 1
@@ -789,7 +789,9 @@ def execute_job(
         if "nmea_out" in job.props:
             nmea_out = job.props["nmea_out"]
             # Set rate for each NMEA message type
-            for nmea in NMEA:
+            # GSV first: it generates the most traffic, so disable it early to reduce
+            # bandwidth pressure when reconfiguring at low baud rates
+            for nmea in [NMEA.GSV] + [n for n in NMEA if n != NMEA.GSV]:
                 target_rate = nmea_out[nmea.value]
                 if set_nmea_message_rate(conn, nmea.name, target_rate):
                     if target_rate > 0:
