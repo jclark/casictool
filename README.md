@@ -35,7 +35,7 @@ Then run with `casictool` while the virtual environment is active.
 
 ## Usage
 
-The command-line interface is modelled after [satpulsetool gps](https://satpulse.net/man/satpulsetool-gps.1.html).
+See the [man page](man/casictool.1.md) for full details. The command-line interface is modelled after [satpulsetool gps](https://satpulse.net/man/satpulsetool-gps.1.html).
 
 Run `casictool --help` for all options.
 
@@ -58,7 +58,7 @@ casictool -d /dev/ttyUSB0 -s 9600 --fixed-pos-ecef -2430000,4700000,3560000 --fi
 casictool -d /dev/ttyUSB0 -s 9600 --pps 0.1 --time-gnss GPS
 ```
 
-## CASIC binary protocol information
+## CASIC binary protocol specification
 
 As part of this exercise I got an AI (Gemini 3 Pro) to translate a Chinese PDF spec into [English](spec/README.md) in Markdown (convenient for input to an AI).
 
