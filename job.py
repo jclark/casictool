@@ -814,7 +814,9 @@ def execute_job(
             return result
     elif job.save == SaveMode.CHANGES:
         if changes.mask == 0:
-            log.warning("no config changes to save")
+            result.success = False
+            result.error = "no config changes to save (did you mean --save-all?)"
+            return result
         else:
             if save_config(conn, changes.mask):
                 log.info("config saved to NVM")
@@ -838,8 +840,8 @@ def execute_job(
         reset_receiver(conn, factory=True)
         log.info("factory reset initiated")
 
-    # Query config after operations (unless reset was performed)
-    if job.reset not in (ResetMode.FACTORY, ResetMode.COLD):
+    # Query config if requested (and no reset was performed)
+    if job.show_config and job.reset not in (ResetMode.FACTORY, ResetMode.COLD):
         result.config_after = query_config(conn, log)
 
     return result
