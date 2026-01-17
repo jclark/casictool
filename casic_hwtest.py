@@ -251,14 +251,12 @@ NMEA_TESTS: list[ConfigProps] = [
 TEST_ECEF = (-1144698.0455, 6090335.4099, 1504171.3914)
 
 TIME_MODE_TESTS: list[ConfigProps] = [
-    # Mobile mode
-    {"time_mode": MobileMode()},
     # Survey-in mode with different parameters
     {"time_mode": SurveyMode(min_dur=60, acc=50.0)},
     {"time_mode": SurveyMode(min_dur=120, acc=25.0)},
     # Fixed position mode
     {"time_mode": FixedMode(ecef=TEST_ECEF, acc=10.0)},
-    # Back to mobile mode
+    # Good state: mobile mode (last test leaves receiver in clean state)
     {"time_mode": MobileMode()},
 ]
 
