@@ -911,11 +911,40 @@ Special Case: For RXM\_SENSOR (0x03 0x07), rate sets samples per second.
 
 #### **2.12.1 MSG-BDSUTC (0x08 0x00)**
 
-**Payload Content** (Length 20\) 59 | Offset | Type | Name | Unit | Description | | :--- | :--- | :--- | :--- | :--- | | 0 | U4 | res1 | | Reserved | | 4 | I4 | a0UTC | s | BDT clock bias (![][image49]) | | 8 | I4 | a1UTC | s/s | BDT clock rate (![][image50]) | | 12 | I1 | dtls | s | Delta UTC before leap second | | 13 | I1 | dtlsf | s | Delta UTC after leap second | | 14 | U1 | res2 | | Reserved | | 15 | U1 | res3 | | Reserved | | 16 | U1 | wnlsf | week | Week of new leap second | | 17 | U1 | dn | day | Day of new leap second | | 18 | I1 | valid | | Validity (0=Invalid, 1=Unhealthy, 2=Expired, 3=Valid) | | 19 | U1 | res4 | | Reserved |
+**Payload Content** (Length 20\) 59
+
+| Offset | Type | Name | Unit | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| 0 | U4 | res1 | | Reserved |
+| 4 | I4 | a0UTC | s | BDT clock bias (![][image49]) |
+| 8 | I4 | a1UTC | s/s | BDT clock rate (![][image50]) |
+| 12 | I1 | dtls | s | Delta UTC before leap second |
+| 13 | I1 | dtlsf | s | Delta UTC after leap second |
+| 14 | U1 | res2 | | Reserved |
+| 15 | U1 | res3 | | Reserved |
+| 16 | U1 | wnlsf | week | Week of new leap second |
+| 17 | U1 | dn | day | Day of new leap second |
+| 18 | I1 | valid | | Validity (0=Invalid, 1=Unhealthy, 2=Expired, 3=Valid) |
+| 19 | U1 | res4 | | Reserved |
 
 #### **2.12.2 MSG-BDSION (0x08 0x01)**
 
-**Payload Content** (Length 16\) 60 | Offset | Type | Name | Description | | :--- | :--- | :--- | :--- | | 0 | U4 | res1 | Reserved | | 4 | I1 | alpha0 | Ionosphere Param (![][image49]) | | 5 | I1 | alpha1 | Ionosphere Param (![][image51]) | | 6 | I1 | alpha2 | Ionosphere Param (![][image52]) | | 7 | I1 | alpha3 | Ionosphere Param (![][image52]) | | 8 | I1 | beta0 | Ionosphere Param (![][image53]) | | 9 | I1 | beta1 | Ionosphere Param (![][image54]) | | 10 | I1 | beta2 | Ionosphere Param (![][image55]) | | 11 | I1 | beta3 | Ionosphere Param (![][image55]) | | 12 | U1 | valid | Validity | | 13 | U1 | res2 | Reserved | | 14 | U2 | res3 | Reserved |
+**Payload Content** (Length 16\) 60
+
+| Offset | Type | Name | Description |
+| :--- | :--- | :--- | :--- |
+| 0 | U4 | res1 | Reserved |
+| 4 | I1 | alpha0 | Ionosphere Param (![][image49]) |
+| 5 | I1 | alpha1 | Ionosphere Param (![][image51]) |
+| 6 | I1 | alpha2 | Ionosphere Param (![][image52]) |
+| 7 | I1 | alpha3 | Ionosphere Param (![][image52]) |
+| 8 | I1 | beta0 | Ionosphere Param (![][image53]) |
+| 9 | I1 | beta1 | Ionosphere Param (![][image54]) |
+| 10 | I1 | beta2 | Ionosphere Param (![][image55]) |
+| 11 | I1 | beta3 | Ionosphere Param (![][image55]) |
+| 12 | U1 | valid | Validity |
+| 13 | U1 | res2 | Reserved |
+| 14 | U2 | res3 | Reserved |
 
 #### **2.12.3 MSG-BDSEPH (0x08 0x02)**
 
@@ -941,17 +970,47 @@ Special Case: For RXM\_SENSOR (0x03 0x07), rate sets samples per second.
 
 #### **2.13.1 MON-VER (0x0A 0x04)**
 
-**Payload Content** (Length 64\) 66 | Offset | Type | Name | Description | | :--- | :--- | :--- | :--- | | 0 | CH\[32\] | swVersion | Software Version String | | 32 | CH\[32\] | hwVersion | Hardware Version String |
+**Payload Content** (Length 64\) 66
+
+| Offset | Type | Name | Description |
+| :--- | :--- | :--- | :--- |
+| 0 | CH\[32\] | swVersion | Software Version String |
+| 32 | CH\[32\] | hwVersion | Hardware Version String |
 
 #### **2.13.2 MON-HW (0x0A 0x09)**
 
-**Payload Content** (Length 56\) 67 | Offset | Type | Name | Description | | :--- | :--- | :--- | :--- | | 0 | U4 | noisePerMs0 | Noise Power DIF0 | | 4 | U4 | noisePerMs1 | Noise Power DIF1 | | 8 | U4 | noisePerMs2 | Noise Power DIF2 | | 12 | U2 | agcData0 | AGC Data DIF0 | | 14 | U2 | agcData1 | AGC Data DIF1 | | 16 | U2 | agcData2 | AGC Data DIF2 | | 20 | U1 | antStatus | Antenna Status (0=Init, 1=Unknown, 2=OK, 3=Short, 4=Open) | | 24 | U4\[8\] | jamming | Jamming Frequencies |
+**Payload Content** (Length 56\) 67
+
+| Offset | Type | Name | Description |
+| :--- | :--- | :--- | :--- |
+| 0 | U4 | noisePerMs0 | Noise Power DIF0 |
+| 4 | U4 | noisePerMs1 | Noise Power DIF1 |
+| 8 | U4 | noisePerMs2 | Noise Power DIF2 |
+| 12 | U2 | agcData0 | AGC Data DIF0 |
+| 14 | U2 | agcData1 | AGC Data DIF1 |
+| 16 | U2 | agcData2 | AGC Data DIF2 |
+| 20 | U1 | antStatus | Antenna Status (0=Init, 1=Unknown, 2=OK, 3=Short, 4=Open) |
+| 24 | U4\[8\] | jamming | Jamming Frequencies |
 
 ### **2.14 AID (0x0B)**
 
 #### **2.14.1 AID-INI (0x0B 0x01)**
 
-**Payload Content** (Length 56\) 68 | Offset | Type | Name | Description | | :--- | :--- | :--- | :--- | | 0 | R8 | ecefXOrLat | ECEF X (m) or Latitude (deg) | | 8 | R8 | ecefYOrLon | ECEF Y (m) or Longitude (deg) | | 16 | R8 | ecefZOrAlt | ECEF Z (m) or Altitude (m) | | 24 | R8 | tow | GPS TOW | | 32 | R4 | freqBias | Clock Freq Drift (ppm) | | 36 | R4 | pAcc | Position Accuracy | | 40 | R4 | tAcc | Time Accuracy | | 44 | R4 | fAcc | Frequency Accuracy | | 52 | U2 | wn | GPS Week | | 54 | U1 | timeSource | Time Source | | 55 | U1 | flags | Flags (B0=PosValid, B1=TimeValid, B2=DriftValid, B4=FreqValid, B5=LLA format, B6=AltInvalid) |
+**Payload Content** (Length 56\) 68
+
+| Offset | Type | Name | Description |
+| :--- | :--- | :--- | :--- |
+| 0 | R8 | ecefXOrLat | ECEF X (m) or Latitude (deg) |
+| 8 | R8 | ecefYOrLon | ECEF Y (m) or Longitude (deg) |
+| 16 | R8 | ecefZOrAlt | ECEF Z (m) or Altitude (m) |
+| 24 | R8 | tow | GPS TOW |
+| 32 | R4 | freqBias | Clock Freq Drift (ppm) |
+| 36 | R4 | pAcc | Position Accuracy |
+| 40 | R4 | tAcc | Time Accuracy |
+| 44 | R4 | fAcc | Frequency Accuracy |
+| 52 | U2 | wn | GPS Week |
+| 54 | U1 | timeSource | Time Source |
+| 55 | U1 | flags | Flags (B0=PosValid, B1=TimeValid, B2=DriftValid, B4=FreqValid, B5=LLA format, B6=AltInvalid) |
 
 #### **2.14.2 AID-HUI (0x0B 0x03)**
 
