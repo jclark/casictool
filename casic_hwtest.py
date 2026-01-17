@@ -57,10 +57,10 @@ TestResult = Pass | Fail
 # ============================================================================
 
 
-def verify(conn: CasicConnection, props: ConfigProps, log: logging.Logger) -> TestResult:
+def verify(conn: CasicConnection, props: ConfigProps, tool_log: logging.Logger) -> TestResult:
     """Apply props and verify they took effect."""
     job = ConfigJob(props=props)
-    result = execute_job(conn, job, log)
+    result = execute_job(conn, job, tool_log)
     if not result.success:
         return Fail({"error": {"expected": "success", "actual": result.error}})
     actual = query_config_props(conn)
@@ -75,7 +75,7 @@ def verify(conn: CasicConnection, props: ConfigProps, log: logging.Logger) -> Te
 
 
 def verify_persist(
-    conn: CasicConnection, props: ConfigProps, alt_props: ConfigProps, log: logging.Logger
+    conn: CasicConnection, props: ConfigProps, alt_props: ConfigProps, tool_log: logging.Logger
 ) -> TestResult:
     """Verify save/reload round-trip.
 
@@ -87,19 +87,19 @@ def verify_persist(
     """
     # Set props and save to NVM
     job = ConfigJob(props=props, save=SaveMode.CHANGES)
-    result = execute_job(conn, job, log)
+    result = execute_job(conn, job, tool_log)
     if not result.success:
         return Fail({"save": {"expected": "success", "actual": result.error}})
 
     # Set alt_props WITHOUT saving (changes RAM only)
     job = ConfigJob(props=alt_props)
-    result = execute_job(conn, job, log)
+    result = execute_job(conn, job, tool_log)
     if not result.success:
         return Fail({"alt_config": {"expected": "success", "actual": result.error}})
 
     # Reload from NVM - should restore props
     job = ConfigJob(reset=ResetMode.RELOAD)
-    result = execute_job(conn, job, log)
+    result = execute_job(conn, job, tool_log)
     if not result.success:
         return Fail({"reload": {"expected": "success", "actual": result.error}})
 
@@ -146,16 +146,17 @@ def run_tests(
     conn: CasicConnection,
     name: str,
     tests: list[ConfigProps],
-    log: logging.Logger,
+    test_log: logging.Logger,
+    tool_log: logging.Logger,
 ) -> tuple[int, int, list[ConfigProps]]:
     """Run a list of tests and return (passed, total, failed_tests)."""
-    log.info(f"running {name} tests")
+    test_log.info(f"running {name} tests")
     passed = 0
     failed: list[ConfigProps] = []
 
     for props in tests:
-        result = verify(conn, props, log)
-        log_result(log, props, result)
+        result = verify(conn, props, tool_log)
+        log_result(test_log, props, result)
         if isinstance(result, Pass):
             passed += 1
         else:
@@ -198,26 +199,27 @@ def run_persist_tests(
     conn: CasicConnection,
     name: str,
     tests: list[ConfigProps],
-    log: logging.Logger,
+    test_log: logging.Logger,
+    tool_log: logging.Logger,
 ) -> tuple[int, int, list[ConfigProps]]:
     """Run persist tests for a list of ConfigProps.
 
     For each test, use the next item in the list as alt_props (wrap around for last).
     """
-    log.info(f"running {name} persist tests")
+    test_log.info(f"running {name} persist tests")
     passed = 0
     failed: list[ConfigProps] = []
 
     for i, props in enumerate(tests):
         # Use next item as alt_props (wrap around)
         alt_props = tests[(i + 1) % len(tests)]
-        result = verify_persist(conn, props, alt_props, log)
+        result = verify_persist(conn, props, alt_props, tool_log)
         if isinstance(result, Pass):
-            log.info(f"PASS persist {format_props(props)}")
+            test_log.info(f"PASS persist {format_props(props)}")
             passed += 1
         else:
             for key, vals in result.mismatches.items():
-                log.error(f"FAIL {key}: expected {vals['expected']}, got {vals['actual']}")
+                test_log.error(f"FAIL {key}: expected {vals['expected']}, got {vals['actual']}")
             failed.append(props)
 
     return passed, len(tests), failed
@@ -308,18 +310,23 @@ def main() -> int:
     args = parser.parse_args()
 
     # Setup logging (output to stdout for hwtest)
-    log = logging.getLogger("casic_hwtest")
     handler = logging.StreamHandler(sys.stdout)
-    if args.debug:
-        level = logging.DEBUG
-    elif args.quiet:
-        level = logging.WARNING
-    else:
-        level = logging.INFO
-    handler.setLevel(level)
-    log.setLevel(level)
     handler.setFormatter(LevelFormatter("%(message)s"))
-    log.addHandler(handler)
+
+    # Test progress logger (INFO level normally)
+    test_log = logging.getLogger("casic_hwtest")
+    if args.debug:
+        test_log.setLevel(logging.DEBUG)
+    elif args.quiet:
+        test_log.setLevel(logging.WARNING)
+    else:
+        test_log.setLevel(logging.INFO)
+    test_log.addHandler(handler)
+
+    # Protocol logger for lower layers (WARNING level normally, DEBUG if --debug)
+    tool_log = logging.getLogger("casictool")
+    tool_log.setLevel(logging.DEBUG if args.debug else logging.WARNING)
+    tool_log.addHandler(handler)
 
     # Determine which tests to run
     run_gnss = args.gnss or args.all
@@ -336,21 +343,21 @@ def main() -> int:
 
     # Connect to receiver
     try:
-        conn = CasicConnection(args.device, args.speed, packet_log=args.packet_log, log=log)
+        conn = CasicConnection(args.device, args.speed, packet_log=args.packet_log, log=tool_log)
     except Exception as e:
-        log.error(f"could not connect to {args.device}: {e}")
+        test_log.error(f"could not connect to {args.device}: {e}")
         return 1
 
     # Probe receiver once at startup
-    is_casic, version = probe_receiver(conn, log)
+    is_casic, version = probe_receiver(conn, tool_log)
     if not is_casic:
-        log.error("no response from receiver")
+        test_log.error("no response from receiver")
         conn.close()
         return 1
     if version:
-        log.info(f"receiver: {version.sw_version}")
+        test_log.info(f"receiver: {version.sw_version}")
     else:
-        log.info("receiver: CASIC (MON-VER not supported)")
+        test_log.info("receiver: CASIC (MON-VER not supported)")
 
     results: dict[str, tuple[int, int, list[ConfigProps]]] = {}
 
@@ -359,41 +366,41 @@ def main() -> int:
         # NMEA runs first to minimize output before other tests
         if not run_persist or (run_gnss or run_nmea or run_time_mode or run_pps):
             if run_nmea:
-                results["NMEA"] = run_tests(conn, "NMEA", NMEA_TESTS, log)
+                results["NMEA"] = run_tests(conn, "NMEA", NMEA_TESTS, test_log, tool_log)
 
             if run_gnss:
-                results["GNSS"] = run_tests(conn, "GNSS", GNSS_TESTS, log)
+                results["GNSS"] = run_tests(conn, "GNSS", GNSS_TESTS, test_log, tool_log)
 
             if run_time_mode:
-                results["Time Mode"] = run_tests(conn, "time mode", TIME_MODE_TESTS, log)
+                results["Time Mode"] = run_tests(conn, "time mode", TIME_MODE_TESTS, test_log, tool_log)
 
             if run_pps:
-                results["PPS"] = run_tests(conn, "PPS", PPS_TESTS, log)
+                results["PPS"] = run_tests(conn, "PPS", PPS_TESTS, test_log, tool_log)
 
         # Run persist tests if --persist specified
         if run_persist:
             if run_nmea:
                 results["NMEA Persist"] = run_persist_tests(
-                    conn, "NMEA", NMEA_TESTS, log
+                    conn, "NMEA", NMEA_TESTS, test_log, tool_log
                 )
 
             if run_gnss:
                 results["GNSS Persist"] = run_persist_tests(
-                    conn, "GNSS", GNSS_TESTS, log
+                    conn, "GNSS", GNSS_TESTS, test_log, tool_log
                 )
 
             if run_time_mode:
                 results["Time Mode Persist"] = run_persist_tests(
-                    conn, "time-mode", TIME_MODE_TESTS, log
+                    conn, "time mode", TIME_MODE_TESTS, test_log, tool_log
                 )
 
             if run_pps:
-                results["PPS Persist"] = run_persist_tests(conn, "PPS", PPS_TESTS, log)
+                results["PPS Persist"] = run_persist_tests(conn, "PPS", PPS_TESTS, test_log, tool_log)
 
     finally:
         conn.close()
 
-    return log_summary(log, results)
+    return log_summary(test_log, results)
 
 
 if __name__ == "__main__":
