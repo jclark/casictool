@@ -1,8 +1,3 @@
----
-section: 1
-title: casictool
----
-
 # NAME
 
 casictool - configure a GPS receiver using CASIC protocol

@@ -10,7 +10,7 @@ all: $(OUTPUTS)
 
 # GitHub-flavored markdown from roff
 %.1.md: %.1
-	$(PANDOC) -s -f man -t gfm -o $@ $<
+	$(PANDOC) -f man -t gfm -o $@ $<
 
 realclean:
 	-rm -f $(OUTPUTS)
