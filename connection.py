@@ -80,6 +80,12 @@ class CasicConnection:
             self._packet_log = open(packet_log, "a")
         self._log = log
         self._parser = CasicStreamParser()
+        self._seen_packet_types: set[str] = set()
+
+    @property
+    def seen_casic_packet(self) -> bool:
+        """True if we've received at least one valid CASIC packet."""
+        return "CASIC" in self._seen_packet_types
 
     def close(self) -> None:
         if self._packet_log:
@@ -160,6 +166,13 @@ class CasicConnection:
             msg_name = MSG_NAMES.get((cls, id), f"0x{cls:02X}-0x{id:02X}")
             self._log.debug(f"TX {msg_name} ({len(payload)} payload bytes)")
 
+    def _log_valid_packet_seen(self, packet_type: str) -> None:
+        """Log info message the first time we see a valid packet of this type."""
+        if packet_type not in self._seen_packet_types:
+            self._seen_packet_types.add(packet_type)
+            if self._log:
+                self._log.info(f"valid {packet_type} packet received; speed OK")
+
     def _log_event(self, event: StreamEvent) -> None:
         """Log a received event to packet log and debug output."""
         if isinstance(event, NmeaSentence):
@@ -168,6 +181,7 @@ class CasicConnection:
             except UnicodeDecodeError:
                 return
             self._log_nmea_packet(sentence, event.timestamp)
+            self._log_valid_packet_seen("NMEA")
             if self._log:
                 msg_type = sentence[1:].split(",", 1)[0] if sentence else "?"
                 self._log.debug(f"RX NMEA {msg_type}")
@@ -177,6 +191,7 @@ class CasicConnection:
                 self._log.debug(f"RX UNKNOWN ({len(event.data)} bytes)")
         elif isinstance(event, CasicPacket):
             self._log_casic_packet(event.raw, event.timestamp, out=False)
+            self._log_valid_packet_seen("CASIC")
             if self._log:
                 msg_name = MSG_NAMES.get(
                     (event.msg_id.cls, event.msg_id.id),

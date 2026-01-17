@@ -215,10 +215,11 @@ def probe_receiver(
     """
     # Wait for any packet before sending query (receiver may need time to start)
     log.debug("waiting for receiver data...")
-    if conn.receive_packet(timeout=2.0) is None:
-        log.warning("no data received from receiver, check connection and baud rate")
+    first_packet = conn.receive_packet(timeout=2.0)
+    if first_packet is None:
+        log.warning("no data received from receiver; check connection and baud rate")
     else:
-        log.debug("receiver data detected")
+        log.info("receiving data from receiver")
 
     # Retry MON-VER query up to 5 times
     for attempt in range(5):
@@ -234,7 +235,9 @@ def probe_receiver(
         log.debug(f"MON-VER timeout after attempt {attempt + 1}")
 
     log.debug("all MON-VER attempts failed")
-    return False, None  # All attempts timed out - not CASIC
+    if conn.seen_casic_packet:
+        log.warning("received CASIC packets but no response to probe; TX may not be working")
+    return False, None
 
 
 def query_nmea_rates(
