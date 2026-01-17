@@ -37,3 +37,10 @@ The tool uses binary CASIC messages (0xBA 0xCE header) for configuration. Key me
 - ACK (0x05): Acknowledgment responses
 - NAV (0x01): Navigation data
 - TIM (0x02): Timing/PPS data
+
+## Code Style
+
+Error message style (applies to both log messages and exceptions):
+- No sentence capitalization (acronyms like PPS, GNSS, CASIC are OK)
+- No terminating periods
+- Use semicolons to join related clauses

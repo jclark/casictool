@@ -209,7 +209,7 @@ def parse_gnss_arg(gnss_str: str) -> set[GNSS]:
         if not item:
             continue
         if item not in VALID_GNSS:
-            raise ValueError(f"Unknown constellation: {item}")
+            raise ValueError(f"unknown constellation: {item}")
 
         if item == "GPS":
             result.add(GNSS.GPS)
@@ -242,7 +242,7 @@ def parse_nmea_out(nmea_str: str) -> list[int]:
             nmea = NMEA[item]
             result[nmea.value] = 1
         except KeyError:
-            raise ValueError(f"Unknown NMEA message: {item}")
+            raise ValueError(f"unknown NMEA message: {item}")
 
     return result
 
@@ -265,7 +265,7 @@ def parse_time_gnss_arg(system: str) -> GNSS:
     elif system == "GALILEO":
         system = "GAL"
     if system not in {"GPS", "GAL", "BDS", "GLO"}:
-        raise ValueError(f"Unknown time source: {system}. Use GPS, GAL, BDS, or GLO.")
+        raise ValueError(f"unknown time source: {system}; use GPS, GAL, BDS, or GLO")
     return GNSS(system)
 
 
@@ -405,7 +405,7 @@ def run_casictool(argv: list[str], log: logging.Logger) -> CommandResult:
                 is_casic, version = probe_receiver(conn, log)
                 if not is_casic:
                     return CommandResult(
-                        success=False, error="No response from receiver. Not a CASIC device?"
+                        success=False, error="no response from receiver; not a CASIC device?"
                     )
             else:
                 version = None
@@ -456,7 +456,7 @@ def main() -> int:
         return 0
 
     if not result.success:
-        print(f"error: {result.error}", file=sys.stderr)
+        log.error(result.error)
         return 1
 
     # Build job again to check show_config flag for printing
