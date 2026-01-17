@@ -69,3 +69,7 @@ The timeSource field in CFG-TP has two modes per constellation:
 - Parse as U2 mode + U2 reserved instead of U4
 - When building the payload, set reserved to 0
 
+## NMEA Message Emission Order
+
+NMEA messages are emitted in a fixed order: GGA, GSV, RMC, ZDA. The order in which messages are enabled does not affect emission order.
+
