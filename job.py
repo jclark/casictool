@@ -24,7 +24,9 @@ from casic import (
     CFG_RST,
     CFG_TMODE,
     CFG_TP,
+    CLS_NMEA,
     MON_VER,
+    MSG_NAMES,
     NMEA_MESSAGES,
     MessageRatesConfig,
     PortConfig,
@@ -217,7 +219,7 @@ def probe_receiver(
     log.debug("waiting for receiver data...")
     first_packet = conn.receive_packet(timeout=2.0)
     if first_packet is None:
-        log.warning("no data received from receiver; check connection and baud rate")
+        log.warning("no data being received (wrong device or speed?); querying anyway")
     else:
         log.info("receiving data from receiver")
 
@@ -252,6 +254,7 @@ def query_nmea_rates(
     nmea_lookup = {(msg.cls, msg.id): name for name, msg in NMEA_MESSAGES}
 
     rates: dict[str, int] = {}
+    binary_rates: dict[str, int] = {}
     conn.send(CFG_MSG.cls, CFG_MSG.id, b"")
 
     # Collect all CFG-MSG responses (two-tier timeouts)
@@ -272,19 +275,30 @@ def query_nmea_rates(
         # Check for actual CFG-MSG response
         if recv_id.cls == CFG_MSG.cls and recv_id.id == CFG_MSG.id and len(recv_payload) >= 4:
             msg_cls, msg_id, rate = recv_payload[0], recv_payload[1], parse_cfg_msg(recv_payload)
-            name = nmea_lookup.get((msg_cls, msg_id))
-            if name:
-                rates[name] = rate
+            if msg_cls == CLS_NMEA:
+                # NMEA message - track rate
+                name = nmea_lookup.get((msg_cls, msg_id))
+                if name:
+                    rates[name] = rate
+                    if log:
+                        log.debug(f"CFG-MSG {name}: rate={rate}")
+            else:
+                # Binary CASIC message - track rate
+                name = MSG_NAMES.get((msg_cls, msg_id))
+                if name:
+                    binary_rates[name] = rate
+                    if log:
+                        log.debug(f"CFG-MSG {name}: rate={rate}")
             got_response = True
 
-    if not rates:
+    if not rates and not binary_rates:
         if log:
             log.warning("no response to NMEA message rate configuration (CFG-MSG) query")
         return None
 
     if log:
         log.info("got NMEA message rate configuration")
-    return MessageRatesConfig(rates=rates)
+    return MessageRatesConfig(rates=rates, binary_rates=binary_rates or None)
 
 
 def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> ReceiverConfig:

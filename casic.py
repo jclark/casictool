@@ -58,6 +58,44 @@ CFG_RATE = MsgID(CLS_CFG, 0x04)
 CFG_CFG = MsgID(CLS_CFG, 0x05)
 CFG_TMODE = MsgID(CLS_CFG, 0x06)
 CFG_NAVX = MsgID(CLS_CFG, 0x07)
+CFG_GROUP = MsgID(CLS_CFG, 0x08)
+CFG_INS = MsgID(CLS_CFG, 0x10)
+
+# NAV messages
+NAV_STATUS = MsgID(CLS_NAV, 0x00)
+NAV_DOP = MsgID(CLS_NAV, 0x01)
+NAV_SOL = MsgID(CLS_NAV, 0x02)
+NAV_PV = MsgID(CLS_NAV, 0x03)
+NAV_IMUATT = MsgID(CLS_NAV, 0x06)
+NAV_TIMEUTC = MsgID(CLS_NAV, 0x10)
+NAV_CLOCK = MsgID(CLS_NAV, 0x11)
+NAV_GPSINFO = MsgID(CLS_NAV, 0x20)
+NAV_BDSINFO = MsgID(CLS_NAV, 0x21)
+NAV_GLNINFO = MsgID(CLS_NAV, 0x22)
+
+# TIM messages
+TIM_TP = MsgID(CLS_TIM, 0x00)
+
+# RXM messages
+RXM_SENSOR = MsgID(CLS_RXM, 0x07)
+RXM_MEASX = MsgID(CLS_RXM, 0x10)
+RXM_SVPOS = MsgID(CLS_RXM, 0x11)
+
+# MSG messages (satellite navigation data)
+MSG_BDSUTC = MsgID(CLS_MSG, 0x00)
+MSG_BDSION = MsgID(CLS_MSG, 0x01)
+MSG_BDSEPH = MsgID(CLS_MSG, 0x02)
+MSG_GPSUTC = MsgID(CLS_MSG, 0x05)
+MSG_GPSION = MsgID(CLS_MSG, 0x06)
+MSG_GPSEPH = MsgID(CLS_MSG, 0x07)
+MSG_GLNEPH = MsgID(CLS_MSG, 0x08)
+
+# AID messages
+AID_INI = MsgID(CLS_AID, 0x01)
+AID_HUI = MsgID(CLS_AID, 0x03)
+
+# MON messages (MON_VER already defined above)
+MON_HW = MsgID(CLS_MON, 0x09)
 
 # NMEA message IDs (Class 0x4E)
 NMEA_GGA = MsgID(CLS_NMEA, 0x00)
@@ -477,15 +515,22 @@ class RateConfig:
 
 @dataclass
 class MessageRatesConfig:
-    """CFG-MSG responses: NMEA message output rates."""
+    """CFG-MSG responses: NMEA and binary message output rates."""
 
-    rates: dict[str, int]  # message name -> rate (0=off, 1=every fix, N=every N fixes)
+    rates: dict[str, int]  # NMEA message name -> rate (0=off, 1=every fix, N=every N fixes)
+    binary_rates: dict[str, int] | None = None  # CASIC binary message name -> rate
 
     def format(self) -> str:
-        enabled = [name for name, rate in self.rates.items() if rate > 0]
-        if enabled:
-            return f"NMEA messages enabled: {', '.join(enabled)}"
-        return "NMEA messages enabled: (none)"
+        lines = []
+        nmea_enabled = [name for name, rate in self.rates.items() if rate > 0]
+        lines.append(f"NMEA messages enabled: {', '.join(nmea_enabled) if nmea_enabled else 'none'}")
+
+        if self.binary_rates:
+            casic_enabled = [name for name, rate in self.binary_rates.items() if rate > 0]
+            lines.append(f"CASIC messages enabled: {', '.join(casic_enabled) if casic_enabled else 'none'}")
+        else:
+            lines.append("CASIC messages enabled: none")
+        return "\n".join(lines)
 
 
 @dataclass
