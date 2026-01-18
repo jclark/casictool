@@ -52,7 +52,7 @@ casictool \- configure a GPS receiver using CASIC protocol
 .P
 .PD
 \ \ \ \ [\f[B]\-\-nmea\-out\f[R]
-\f[B]GGA\f[R]|\f[B]GLL\f[R]|\f[B]GSA\f[R]|\f[B]GSV\f[R]|\f[B]RMC\f[R]|\f[B]VTG\f[R]|\f[B]ZDA\f[R],\&...]
+\f[B]none\f[R]|\f[B]GGA\f[R]|\f[B]GLL\f[R]|\f[B]GSA\f[R]|\f[B]GSV\f[R]|\f[B]RMC\f[R]|\f[B]VTG\f[R]|\f[B]ZDA\f[R],\&...]
 .PD 0
 .P
 .PD
@@ -137,7 +137,10 @@ A width of 0 disables the PPS signal.
 .TP
 \f[B]\-\-nmea\-out\f[R] \f[I]flags\f[R]
 Configure NMEA message output.
-The \f[I]flags\f[R] parameter is a comma\-separated list of:
+The \f[I]flags\f[R] parameter is a comma\-separated list of message
+names.
+Messages not in the list will be disabled.
+Use \f[B]none\f[R] to disable all NMEA messages.
 .TP
 \f[B]GGA\f[R]
 Enable GGA (Global Positioning System Fix Data) messages

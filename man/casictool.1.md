@@ -28,7 +28,7 @@ casictool - configure a GPS receiver using CASIC protocol
 *meters*\]
 
 \[**--nmea-out**
-**GGA**\|**GLL**\|**GSA**\|**GSV**\|**RMC**\|**VTG**\|**ZDA**,...\]
+**none**\|**GGA**\|**GLL**\|**GSA**\|**GSV**\|**RMC**\|**VTG**\|**ZDA**,...\]
 
 \[**--casic-out** *messages*\]
 
@@ -110,7 +110,8 @@ with the specified pulse width in seconds. The *width* must be \>= 0 and
 
 **--nmea-out** *flags*  
 Configure NMEA message output. The *flags* parameter is a
-comma-separated list of:
+comma-separated list of message names. Messages not in the list will be
+disabled. Use **none** to disable all NMEA messages.
 
 **GGA**  
 Enable GGA (Global Positioning System Fix Data) messages
