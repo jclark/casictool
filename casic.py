@@ -22,6 +22,19 @@ CLS_MON = 0x0A
 CLS_AID = 0x0B
 CLS_NMEA = 0x4E
 
+# Class number to name prefix
+CLS_NAMES: dict[int, str] = {
+    CLS_NAV: "NAV",
+    CLS_TIM: "TIM",
+    CLS_RXM: "RXM",
+    CLS_ACK: "ACK",
+    CLS_CFG: "CFG",
+    CLS_MSG: "MSG",
+    CLS_MON: "MON",
+    CLS_AID: "AID",
+    CLS_NMEA: "NMEA",
+}
+
 
 class MsgID:
     """Combined class/id identifier for CASIC messages."""
@@ -130,6 +143,21 @@ def _build_msg_names() -> dict[tuple[int, int], str]:
 
 
 MSG_NAMES: dict[tuple[int, int], str] = _build_msg_names()
+
+
+def msg_name(cls: int, id: int) -> str:
+    """Get human-readable name for a message class/id pair.
+
+    Returns known name (e.g., "CFG-TP"), or class prefix with hex ID if class
+    is known (e.g., "NAV-0x17"), or both as hex (e.g., "0x01-0x17").
+    """
+    name = MSG_NAMES.get((cls, id))
+    if name:
+        return name
+    cls_prefix = CLS_NAMES.get(cls)
+    if cls_prefix:
+        return f"{cls_prefix}-0x{id:02X}"
+    return f"0x{cls:02X}-0x{id:02X}"
 
 
 # Mask bits for CFG-CFG (configuration sections)

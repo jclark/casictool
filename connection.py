@@ -14,13 +14,13 @@ import serial
 from casic import (
     ACK_ACK,
     ACK_NAK,
-    MSG_NAMES,
     CasicPacket,
     CasicStreamParser,
     MsgID,
     NmeaSentence,
     StreamEvent,
     UnknownBytes,
+    msg_name,
     pack_msg,
 )
 
@@ -98,13 +98,13 @@ class CasicConnection:
         if not self._packet_log:
             return
         cls = data[4]
-        msg_id = data[5]
-        msg_name = MSG_NAMES.get((cls, msg_id), f"UNK-{cls:02X}-{msg_id:02X}")
+        id = data[5]
+        name = msg_name(cls, id)
         dt = datetime.fromtimestamp(ts, tz=timezone.utc)
         entry = {
             "t": dt.strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z",
             "tag": "CSIP",
-            "msg": msg_name,
+            "msg": name,
             "bin": data.hex(),
             "out": out,
         }
@@ -163,8 +163,7 @@ class CasicConnection:
         self._serial.flush()
         self._log_casic_packet(msg, ts, out=True)
         if self._log:
-            msg_name = MSG_NAMES.get((cls, id), f"0x{cls:02X}-0x{id:02X}")
-            self._log.debug(f"TX {msg_name} ({len(payload)} payload bytes)")
+            self._log.debug(f"TX {msg_name(cls, id)} ({len(payload)} payload bytes)")
 
     def _log_valid_packet_seen(self, packet_type: str) -> None:
         """Log info message the first time we see a valid packet of this type."""
@@ -193,11 +192,8 @@ class CasicConnection:
             self._log_casic_packet(event.raw, event.timestamp, out=False)
             self._log_valid_packet_seen("CASIC")
             if self._log:
-                msg_name = MSG_NAMES.get(
-                    (event.msg_id.cls, event.msg_id.id),
-                    f"0x{event.msg_id.cls:02X}-0x{event.msg_id.id:02X}",
-                )
-                self._log.debug(f"RX {msg_name} ({len(event.payload)} payload bytes)")
+                name = msg_name(event.msg_id.cls, event.msg_id.id)
+                self._log.debug(f"RX {name} ({len(event.payload)} payload bytes)")
 
     def receive_packet(self, timeout: float | None = None) -> StreamEvent | None:
         """Receive next packet of any type (CASIC, NMEA, or Unknown).

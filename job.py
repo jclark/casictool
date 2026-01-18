@@ -38,6 +38,7 @@ from casic import (
     build_cfg_rst,
     build_cfg_tmode,
     build_cfg_tp,
+    msg_name,
     parse_cfg_msg,
     parse_cfg_navx,
     parse_cfg_prt,
@@ -284,11 +285,11 @@ def query_nmea_rates(
                         log.debug(f"CFG-MSG {name}: rate={rate}")
             else:
                 # Binary CASIC message - track rate
-                name = MSG_NAMES.get((msg_cls, msg_id))
-                if name:
-                    binary_rates[name] = rate
-                    if log:
-                        log.debug(f"CFG-MSG {name}: rate={rate}")
+                known_name = MSG_NAMES.get((msg_cls, msg_id))
+                if known_name:
+                    binary_rates[known_name] = rate
+                if log:
+                    log.debug(f"CFG-MSG {msg_name(msg_cls, msg_id)}: rate={rate}")
             got_response = True
 
     if not rates and not binary_rates:
