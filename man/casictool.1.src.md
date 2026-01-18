@@ -14,7 +14,8 @@ casictool - configure a GPS receiver using CASIC protocol
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pps** *width*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-mobile**] [**\-\-fixed\-pos\-ecef** *X,Y,Z*] [**\-\-fixed\-pos\-acc** *meters*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-survey**] [**\-\-survey\-time** *seconds*] [**\-\-survey\-acc** *meters*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea\-out** **GGA**\|**GLL**\|**GSA**\|**GSV**\|**RMC**\|**VTG**\|**ZDA**,...]
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-nmea\-out** **none**\|**GGA**\|**GLL**\|**GSA**\|**GSV**\|**RMC**\|**VTG**\|**ZDA**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-casic\-out** *messages*]
 
 # DESCRIPTION
 
@@ -74,7 +75,7 @@ The **casictool** command is used to configure a GPS receiver using the CASIC pr
 : Configure the GPS receiver to enable a pulse-per-second (PPS) signal with the specified pulse width in seconds. The *width* must be >= 0 and <= 1.0. A width of 0 disables the PPS signal.
 
 **\-\-nmea\-out** *flags*
-: Configure NMEA message output. The *flags* parameter is a comma-separated list of:
+: Configure NMEA message output. The *flags* parameter is a comma-separated list of message names. Messages not in the list will be disabled. Use **none** to disable all NMEA messages.
 
   **GGA**
   : Enable GGA (Global Positioning System Fix Data) messages
@@ -96,6 +97,9 @@ The **casictool** command is used to configure a GPS receiver using the CASIC pr
 
   **ZDA**
   : Enable ZDA (Time and Date) messages
+
+**\-\-casic\-out** *messages*
+: Configure CASIC binary message output. The *messages* parameter is a comma-separated list of message names (e.g., **TIM-TP,NAV-SOL**). Messages not in the list will be disabled. Message names are case-insensitive. Use **none** to disable all CASIC binary messages.
 
 **\-\-survey**  
 : Perform a survey to determine the position of the antenna, and then run in a mode that assumes the position of the antenna does not change. The survey makes measurements for a period of time and then computes the position based on those measurements.
@@ -132,3 +136,7 @@ Reset the receiver to factory defaults:
 Enable only NMEA RMC messages:
 
     casictool -d /dev/ttyACM0 -s 19200 --nmea-out RMC
+
+Enable TIM-TP binary message output:
+
+    casictool -d /dev/ttyUSB0 -s 38400 --casic-out TIM-TP

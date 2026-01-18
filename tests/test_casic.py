@@ -608,6 +608,17 @@ class TestParseNmeaOut:
         enable = parse_nmea_out("GGA,GLL,GSA,GSV,RMC,VTG,ZDA")
         assert enable == [1, 1, 1, 1, 1, 1, 1]
 
+    def test_none_disables_all(self) -> None:
+        """Test 'none' disables all NMEA messages."""
+        enable = parse_nmea_out("none")
+        assert enable == [0, 0, 0, 0, 0, 0, 0]
+
+    def test_none_case_insensitive(self) -> None:
+        """Test 'NONE' is case insensitive."""
+        assert parse_nmea_out("NONE") == [0, 0, 0, 0, 0, 0, 0]
+        assert parse_nmea_out("None") == [0, 0, 0, 0, 0, 0, 0]
+        assert parse_nmea_out(" none ") == [0, 0, 0, 0, 0, 0, 0]
+
 
 class TestBuildCfgNavx:
     def test_gps_only(self) -> None:

@@ -144,6 +144,9 @@ def _build_msg_names() -> dict[tuple[int, int], str]:
 
 MSG_NAMES: dict[tuple[int, int], str] = _build_msg_names()
 
+# Reverse lookup: message name -> (cls, id)
+MSG_IDS: dict[str, tuple[int, int]] = {name: key for key, name in MSG_NAMES.items()}
+
 
 def msg_name(cls: int, id: int) -> str:
     """Get human-readable name for a message class/id pair.

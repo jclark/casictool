@@ -30,6 +30,8 @@ casictool - configure a GPS receiver using CASIC protocol
 \[**--nmea-out**
 **GGA**\|**GLL**\|**GSA**\|**GSV**\|**RMC**\|**VTG**\|**ZDA**,...\]
 
+\[**--casic-out** *messages*\]
+
 # DESCRIPTION
 
 The **casictool** command is used to configure a GPS receiver using the
@@ -131,6 +133,12 @@ Enable VTG (Vector Track Made Good) messages
 **ZDA**  
 Enable ZDA (Time and Date) messages
 
+**--casic-out** *messages*  
+Configure CASIC binary message output. The *messages* parameter is a
+comma-separated list of message names (e.g., **TIM-TP,NAV-SOL**).
+Messages not in the list will be disabled. Message names are
+case-insensitive. Use **none** to disable all CASIC binary messages.
+
 **--survey**  
 Perform a survey to determine the position of the antenna, and then run
 in a mode that assumes the position of the antenna does not change. The
@@ -176,6 +184,10 @@ Reset the receiver to factory defaults:
 Enable only NMEA RMC messages:
 
     casictool -d /dev/ttyACM0 -s 19200 --nmea-out RMC
+
+Enable TIM-TP binary message output:
+
+    casictool -d /dev/ttyUSB0 -s 38400 --casic-out TIM-TP
 
 # AUTHORS
 

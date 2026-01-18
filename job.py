@@ -26,6 +26,7 @@ from casic import (
     CFG_TP,
     CLS_NMEA,
     MON_VER,
+    MSG_IDS,
     MSG_NAMES,
     NMEA_MESSAGES,
     MessageRatesConfig,
@@ -159,6 +160,7 @@ class ConfigProps(TypedDict, total=False):
     time_mode: TimeMode  # mobile, survey, or fixed position mode
     time_pulse: TimePulse  # PPS configuration
     nmea_out: NMEARates  # NMEA message output rates
+    casic_out: set[str]  # CASIC binary message names to enable
 
 
 # ============================================================================
@@ -473,6 +475,22 @@ def set_nmea_message_rate(conn: CasicConnection, message_name: str, rate: int) -
     return conn.send_and_wait_ack(CFG_MSG.cls, CFG_MSG.id, payload)
 
 
+def set_casic_message_rate(conn: CasicConnection, msg_cls: int, msg_id: int, rate: int) -> bool:
+    """Set output rate for a specific CASIC binary message.
+
+    Args:
+        conn: Active CASIC connection
+        msg_cls: Message class
+        msg_id: Message ID
+        rate: Output rate (0=disable, 1=enable)
+
+    Returns:
+        True if acknowledged, False on failure
+    """
+    payload = build_cfg_msg_set(msg_cls, msg_id, rate)
+    return conn.send_and_wait_ack(CFG_MSG.cls, CFG_MSG.id, payload)
+
+
 def save_config(conn: CasicConnection, mask: int) -> bool:
     """Save configuration sections to NVM."""
     payload = build_cfg_cfg(mask, mode=1)  # mode=1 is Save
@@ -701,6 +719,14 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
                 pass  # Skip unknown NMEA types
         props["nmea_out"] = nmea_out
 
+    # Query CASIC binary message rates
+    if rates is not None and rates.binary_rates is not None:
+        casic_out: set[str] = set()
+        for name, rate in rates.binary_rates.items():
+            if rate > 0:
+                casic_out.add(name)
+        props["casic_out"] = casic_out
+
     return props
 
 
@@ -817,6 +843,35 @@ def execute_job(
                 else:
                     result.success = False
                     result.error = f"failed to {'enable' if target_rate > 0 else 'disable'} NMEA {nmea.name}"
+                    return result
+
+        # Apply CASIC binary output configuration
+        if "casic_out" in job.props:
+            casic_out = job.props["casic_out"]
+            # Query current rates to get list of known CASIC messages
+            current_rates = query_nmea_rates(conn, log)
+            if current_rates is None or current_rates.binary_rates is None:
+                result.success = False
+                result.error = "failed to query current CASIC message configuration"
+                return result
+
+            # For each known binary message, enable or disable as needed
+            for msg_name_str, _current_rate in current_rates.binary_rates.items():
+                msg_key = MSG_IDS.get(msg_name_str)
+                if msg_key is None:
+                    continue  # Skip unknown messages
+                msg_cls, msg_id = msg_key
+                target_rate = 1 if msg_name_str in casic_out else 0
+
+                if set_casic_message_rate(conn, msg_cls, msg_id, target_rate):
+                    if target_rate > 0:
+                        log.info(f"CASIC {msg_name_str} enabled")
+                    else:
+                        log.info(f"CASIC {msg_name_str} disabled")
+                    changes.mark_msg()
+                else:
+                    result.success = False
+                    result.error = f"failed to {'enable' if target_rate > 0 else 'disable'} CASIC {msg_name_str}"
                     return result
 
     # Execute NVM save operations (after configuration changes)

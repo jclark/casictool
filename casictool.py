@@ -105,7 +105,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=str,
         metavar="MSGS",
         help="Set NMEA message output. Comma-separated list of messages to enable "
-        "(GGA,GLL,GSA,GSV,RMC,VTG,ZDA). Messages not listed will be disabled.",
+        "(GGA,GLL,GSA,GSV,RMC,VTG,ZDA). Use 'none' to disable all. Messages not listed will be disabled.",
+    )
+
+    # CASIC binary message output group
+    casic_group = parser.add_argument_group("CASIC Binary Message Output")
+    casic_group.add_argument(
+        "--casic-out",
+        type=str,
+        metavar="MSGS",
+        help="Set CASIC binary message output. Comma-separated list of messages to enable "
+        "(e.g., TIM-TP,NAV-SOL). Use 'none' to disable all. Messages not listed will be disabled.",
     )
 
     # GNSS constellation group
@@ -227,11 +237,14 @@ def parse_nmea_out(nmea_str: str) -> list[int]:
     """Parse --nmea-out argument into NMEARates list.
 
     Args:
-        nmea_str: Comma-separated message list (e.g., "GGA,RMC,ZDA")
+        nmea_str: Comma-separated message list (e.g., "GGA,RMC,ZDA") or "none"
 
     Returns:
         List of rates indexed by NMEA.value (1 = enabled, 0 = disabled)
     """
+    if nmea_str.strip().lower() == "none":
+        return [0] * len(NMEA)
+
     result = [0] * len(NMEA)
 
     for item in nmea_str.split(","):
@@ -243,6 +256,36 @@ def parse_nmea_out(nmea_str: str) -> list[int]:
             result[nmea.value] = 1
         except KeyError:
             raise ValueError(f"unknown NMEA message: {item}")
+
+    return result
+
+
+def parse_casic_out(casic_str: str) -> set[str]:
+    """Parse --casic-out argument into set of message names.
+
+    Args:
+        casic_str: Comma-separated message list (e.g., "TIM-TP,NAV-SOL") or "none"
+
+    Returns:
+        Set of uppercase message names (empty set for "none")
+
+    Raises:
+        ValueError: If unknown message name specified
+    """
+    from casic import MSG_IDS
+
+    if casic_str.strip().lower() == "none":
+        return set()
+
+    result: set[str] = set()
+
+    for item in casic_str.split(","):
+        item = item.strip().upper().replace("_", "-")
+        if not item:
+            continue
+        if item not in MSG_IDS:
+            raise ValueError(f"unknown CASIC message: {item}")
+        result.add(item)
 
     return result
 
@@ -294,6 +337,13 @@ def build_job(args: argparse.Namespace) -> tuple[ConfigJob, str | None]:
     if args.nmea_out:
         try:
             props["nmea_out"] = parse_nmea_out(args.nmea_out)
+        except ValueError as e:
+            return ConfigJob(), str(e)
+
+    # Parse and set CASIC output configuration
+    if args.casic_out is not None:
+        try:
+            props["casic_out"] = parse_casic_out(args.casic_out)
         except ValueError as e:
             return ConfigJob(), str(e)
 

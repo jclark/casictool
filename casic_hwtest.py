@@ -130,6 +130,9 @@ def format_props(props: ConfigProps) -> str:
         # Show only enabled messages
         enabled = [nmea.name for nmea in NMEA if nmea_out[nmea.value] > 0]
         parts.append(f"nmea_out: {{{', '.join(enabled)}}}")
+    if "casic_out" in props:
+        casic_out = props["casic_out"]
+        parts.append(f"casic_out: {{{', '.join(sorted(casic_out))}}}")
     return "{" + ", ".join(parts) + "}"
 
 
@@ -269,6 +272,15 @@ PPS_TESTS: list[ConfigProps] = [
     {"time_pulse": TimePulse(period=1.0, width=0.1, time_gnss=GNSS.GPS)},
 ]
 
+CASIC_OUT_TESTS: list[ConfigProps] = [
+    # Multiple messages
+    {"casic_out": {"TIM-TP", "NAV-SOL", "NAV-TIMEUTC"}},
+    # Single message
+    {"casic_out": {"TIM-TP"}},
+    # Good state: none enabled (last test leaves receiver in clean state)
+    {"casic_out": set()},
+]
+
 
 # ============================================================================
 # CLI
@@ -282,7 +294,8 @@ def main() -> int:
     parser.add_argument("-d", "--device", required=True, help="Serial device path")
     parser.add_argument("-s", "--speed", type=int, required=True, help="Baud rate")
     parser.add_argument("--gnss", action="store_true", help="Test GNSS configuration")
-    parser.add_argument("--nmea", action="store_true", help="Test NMEA output")
+    parser.add_argument("--nmea-out", action="store_true", help="Test NMEA output")
+    parser.add_argument("--casic-out", action="store_true", help="Test CASIC binary output")
     parser.add_argument("--time-mode", action="store_true", help="Test timing modes")
     parser.add_argument("--pps", action="store_true", help="Test PPS configuration")
     parser.add_argument(
@@ -328,15 +341,16 @@ def main() -> int:
 
     # Determine which tests to run
     run_gnss = args.gnss or args.all
-    run_nmea = args.nmea or args.all
+    run_nmea = args.nmea_out or args.all
+    run_casic_out = args.casic_out or args.all
     run_time_mode = getattr(args, "time_mode") or args.all
     run_pps = args.pps or args.all
     run_persist = args.persist
 
     # Check that at least one test group or --persist is specified
-    if not (run_gnss or run_nmea or run_time_mode or run_pps or run_persist):
+    if not (run_gnss or run_nmea or run_casic_out or run_time_mode or run_pps or run_persist):
         parser.error(
-            "No test groups specified. Use --gnss, --nmea, --time-mode, --pps, --persist, or --all"
+            "No test groups specified. Use --gnss, --nmea-out, --casic-out, --time-mode, --pps, --persist, or --all"
         )
 
     # Connect to receiver
@@ -361,10 +375,13 @@ def main() -> int:
 
     try:
         # Run normal (RAM-only) tests if not --persist-only mode
-        # NMEA runs first to minimize output before other tests
-        if not run_persist or (run_gnss or run_nmea or run_time_mode or run_pps):
+        # NMEA/CASIC output runs first to minimize output before other tests
+        if not run_persist or (run_gnss or run_nmea or run_casic_out or run_time_mode or run_pps):
             if run_nmea:
                 results["NMEA"] = run_tests(conn, "NMEA", NMEA_TESTS, test_log, tool_log)
+
+            if run_casic_out:
+                results["CASIC"] = run_tests(conn, "CASIC", CASIC_OUT_TESTS, test_log, tool_log)
 
             if run_gnss:
                 results["GNSS"] = run_tests(conn, "GNSS", GNSS_TESTS, test_log, tool_log)
@@ -380,6 +397,11 @@ def main() -> int:
             if run_nmea:
                 results["NMEA Persist"] = run_persist_tests(
                     conn, "NMEA", NMEA_TESTS, test_log, tool_log
+                )
+
+            if run_casic_out:
+                results["CASIC Persist"] = run_persist_tests(
+                    conn, "CASIC", CASIC_OUT_TESTS, test_log, tool_log
                 )
 
             if run_gnss:

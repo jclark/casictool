@@ -53,6 +53,10 @@ casictool \- configure a GPS receiver using CASIC protocol
 .PD
 \ \ \ \ [\f[B]\-\-nmea\-out\f[R]
 \f[B]GGA\f[R]|\f[B]GLL\f[R]|\f[B]GSA\f[R]|\f[B]GSV\f[R]|\f[B]RMC\f[R]|\f[B]VTG\f[R]|\f[B]ZDA\f[R],\&...]
+.PD 0
+.P
+.PD
+\ \ \ \ [\f[B]\-\-casic\-out\f[R] \f[I]messages\f[R]]
 .SH DESCRIPTION
 The \f[B]casictool\f[R] command is used to configure a GPS receiver
 using the CASIC protocol.
@@ -156,6 +160,14 @@ Enable VTG (Vector Track Made Good) messages
 \f[B]ZDA\f[R]
 Enable ZDA (Time and Date) messages
 .TP
+\f[B]\-\-casic\-out\f[R] \f[I]messages\f[R]
+Configure CASIC binary message output.
+The \f[I]messages\f[R] parameter is a comma\-separated list of message
+names (e.g., \f[B]TIM\-TP,NAV\-SOL\f[R]).
+Messages not in the list will be disabled.
+Message names are case\-insensitive.
+Use \f[B]none\f[R] to disable all CASIC binary messages.
+.TP
 \f[B]\-\-survey\f[R]
 Perform a survey to determine the position of the antenna, and then run
 in a mode that assumes the position of the antenna does not change.
@@ -209,6 +221,12 @@ Enable only NMEA RMC messages:
 .IP
 .EX
 casictool \-d /dev/ttyACM0 \-s 19200 \-\-nmea\-out RMC
+.EE
+.PP
+Enable TIM\-TP binary message output:
+.IP
+.EX
+casictool \-d /dev/ttyUSB0 \-s 38400 \-\-casic\-out TIM\-TP
 .EE
 .SH AUTHORS
 James Clark.
