@@ -856,12 +856,17 @@ def execute_job(
                 return result
 
             # For each known binary message, enable or disable as needed
-            for msg_name_str, _current_rate in current_rates.binary_rates.items():
+            for msg_name_str, current_rate in current_rates.binary_rates.items():
                 msg_key = MSG_IDS.get(msg_name_str)
                 if msg_key is None:
                     continue  # Skip unknown messages
                 msg_cls, msg_id = msg_key
                 target_rate = 1 if msg_name_str in casic_out else 0
+
+                # Skip if already at the desired rate
+                if current_rate == target_rate:
+                    log.debug(f"CASIC {msg_name_str} already {'enabled' if target_rate else 'disabled'}")
+                    continue
 
                 if set_casic_message_rate(conn, msg_cls, msg_id, target_rate):
                     if target_rate > 0:
