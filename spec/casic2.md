@@ -870,27 +870,76 @@ Special Case: For RXM\_SENSOR (0x03 0x07), rate sets samples per second.
 
 **Payload Content (Set)**
 
-| Offset | Type | Name | Description |
-| :---- | :---- | :---- | :---- |
-| 0 | U4 | mask | Parameter Mask (Remark \[1\]) |
-| 4 | I1 | dyModel | Dynamic Model (0=Portable...7=Air 4g) |
-| 5 | U1 | fixMode | Fix Mode (1=2D, 2=3D, 3=Auto) |
-| 6 | I1 | minSVs | Min Satellites |
-| 7 | I1 | maxSVs | Max Satellites |
-| 8 | U1 | minCNO | Min CNO |
-| 9 | U1 | res1 | Reserved |
-| 10 | I1 | iniFix3D | Initial Fix must be 3D |
-| 11 | I1 | minElev | Min Elevation |
-| 12 | I1 | drLimit | Max DR time |
-| 13 | U1 | navSystem | Nav System Mask (B0=GPS, B1=BDS, B2=GLN) |
-| 14 | U2 | wnRollOver | Week Rollover |
-| 16 | R4 | fixedAlt | Fixed Altitude (2D Mode) |
-| 20 | R4 | fixedAltVar | Fixed Altitude Variance |
-| 24 | R4 | pDop | Max PDOP |
-| 28 | R4 | tDop | Max TDOP |
-| 32 | R4 | pAcc | Max Position Accuracy |
-| 36 | R4 | tAcc | Max Time Accuracy |
-| 40 | R4 | staticHoldTh | Static Hold Threshold (m/s) |
+| Offset | Type | Name | Unit | Description |
+| :---- | :---- | :---- | :---- | :---- |
+| 0 | U4 | mask | | Parameter Mask; only parameters with corresponding bit set are applied (Remark \[1\]) |
+| 4 | U1 | dyModel | | Dynamic Model (Remark \[2\]) |
+| 5 | U1 | fixMode | | Fix Mode (Remark \[3\]) |
+| 6 | U1 | minSVs | | Min satellites for fix |
+| 7 | U1 | maxSVs | | Max satellites for fix |
+| 8 | U1 | minCNO | dB-Hz | Min satellite CNO for fix |
+| 9 | U1 | res1 | | Reserved |
+| 10 | U1 | iniFix3D | | Initial fix must be 3D (0/1) |
+| 11 | I1 | minElev | ° | Min satellite elevation for fix |
+| 12 | U1 | drLimit | s | Max DR time without satellite signal |
+| 13 | U1 | navSystem | | Navigation system enable (Remark \[4\]) |
+| 14 | U2 | wnRollOver | | GPS week rollover count |
+| 16 | R4 | fixedAlt | m | Fixed altitude for 2D fix |
+| 20 | R4 | fixedAltVar | m² | Fixed altitude variance for 2D fix |
+| 24 | R4 | pDop | | Max position DOP |
+| 28 | R4 | tDop | | Max time DOP |
+| 32 | R4 | pAcc | m² | Max position accuracy |
+| 36 | R4 | tAcc | m² | Max time accuracy |
+| 40 | R4 | staticHoldTh | m/s | Static hold threshold |
+
+**Remark \[1\]: Parameter Mask**
+
+| Bit | Description |
+| :--- | :--- |
+| B0 | Apply dynamic model setting |
+| B1 | Apply fix mode setting |
+| B2 | Apply min/max satellite count settings |
+| B3 | Apply min CNO setting |
+| B4 | Reserved |
+| B5 | Apply initial 3D fix setting |
+| B6 | Apply min elevation setting |
+| B7 | Apply DR limit setting |
+| B8 | Apply navigation system enable |
+| B9 | Apply GPS week rollover setting |
+| B10 | Apply altitude assist |
+| B11 | Apply position DOP limit |
+| B12 | Apply time DOP limit |
+| B13 | Apply static hold setting |
+
+**Remark \[2\]: Dynamic Model**
+
+| Value | Description |
+| :--- | :--- |
+| 0 | Portable |
+| 1 | Stationary |
+| 2 | Pedestrian |
+| 3 | Automotive |
+| 4 | Marine |
+| 5 | Airborne <1g |
+| 6 | Airborne <2g |
+| 7 | Airborne <4g |
+
+**Remark \[3\]: Fix Mode**
+
+| Value | Description |
+| :--- | :--- |
+| 0 | Reserved |
+| 1 | 2D fix |
+| 2 | 3D fix |
+| 3 | Auto 2D/3D |
+
+**Remark \[4\]: Navigation System Enable**
+
+| Bit | Description |
+| :--- | :--- |
+| B0 | 1=GPS enabled |
+| B1 | 1=BDS enabled |
+| B2 | 1=GLONASS enabled |
 
 #### **2.11.9 CFG-GROUP (0x06 0x08)**
 
