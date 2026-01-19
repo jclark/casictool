@@ -748,6 +748,11 @@ def parse_cfg_prt(payload: bytes) -> PortConfig:
     return PortConfig(port_id=port_id, proto_mask=proto_mask, mode=mode, baud_rate=baud_rate)
 
 
+def build_cfg_prt(port_id: int, proto_mask: int, mode: int, baud_rate: int) -> bytes:
+    """Build CFG-PRT SET payload (8 bytes)."""
+    return struct.pack("<BBHI", port_id, proto_mask, mode, baud_rate)
+
+
 def parse_cfg_rate(payload: bytes) -> RateConfig:
     """Parse CFG-RATE response payload (4 bytes)."""
     if len(payload) < 4:

@@ -16,6 +16,7 @@ from casic import (
     CFG_MASK_ALL,
     CFG_MASK_MSG,
     CFG_MASK_NAV,
+    CFG_MASK_PORT,
     CFG_MASK_TP,
     CFG_MSG,
     CFG_NAVX,
@@ -36,6 +37,7 @@ from casic import (
     build_cfg_cfg,
     build_cfg_msg_set,
     build_cfg_navx,
+    build_cfg_prt,
     build_cfg_rst,
     build_cfg_tmode,
     build_cfg_tp,
@@ -202,6 +204,10 @@ class ConfigChanges:
         """Mark time pulse configuration as changed (CFG-TP)."""
         self.mask |= CFG_MASK_TP
 
+    def mark_prt(self) -> None:
+        """Mark port configuration as changed (CFG-PRT)."""
+        self.mask |= CFG_MASK_PORT
+
 
 # ============================================================================
 # Query Functions
@@ -243,6 +249,34 @@ def probe_receiver(
     if conn.seen_casic_packet:
         log.warning("received CASIC packets but no response to probe; TX may not be working")
     return False, None
+
+
+def query_port_config(conn: CasicConnection) -> PortConfig | None:
+    """Query CFG-PRT for the current UART's port configuration.
+
+    Returns the PortConfig for conn.uart, or None if query fails.
+    """
+    conn.send(CFG_PRT.cls, CFG_PRT.id, b"")
+    got_response = False
+    while True:
+        timeout = SUBSEQUENT_TIMEOUT if got_response else INITIAL_TIMEOUT
+        result = conn.receive(timeout=timeout)
+        if result is None:
+            break
+        recv_id, recv_payload = result
+        # Check for ACK/NAK
+        if recv_id == ACK_ACK or recv_id == ACK_NAK:
+            if len(recv_payload) >= 2 and recv_payload[0] == CFG_PRT.cls and recv_payload[1] == CFG_PRT.id:
+                if recv_id == ACK_NAK:
+                    break  # NAK means query not supported
+                continue  # ACK means keep waiting for actual response
+        # Check for actual CFG-PRT response
+        if recv_id.cls == CFG_PRT.cls and recv_id.id == CFG_PRT.id and len(recv_payload) >= 8:
+            port = parse_cfg_prt(recv_payload)
+            got_response = True
+            if port.port_id == conn.uart:
+                return port
+    return None
 
 
 def query_nmea_rates(
@@ -457,6 +491,29 @@ def set_mobile_mode(conn: CasicConnection) -> bool:
     return conn.send_and_wait_ack(CFG_TMODE.cls, CFG_TMODE.id, payload)
 
 
+def set_port_text_output(conn: CasicConnection, port: PortConfig, enable: bool) -> bool:
+    """Enable or disable text (NMEA) output on a port.
+
+    Uses read-modify-write: preserves existing mode and baud_rate,
+    only changes the text output bit (B5) in protoMask.
+
+    Args:
+        conn: Active CASIC connection
+        port: Current port configuration from CFG-PRT query
+        enable: True to enable text output, False to disable
+
+    Returns:
+        True if acknowledged, False on failure
+    """
+    if enable:
+        new_proto_mask = port.proto_mask | 0x20  # Set B5
+    else:
+        new_proto_mask = port.proto_mask & ~0x20  # Clear B5
+
+    payload = build_cfg_prt(port.port_id, new_proto_mask, port.mode, port.baud_rate)
+    return conn.send_and_wait_ack(CFG_PRT.cls, CFG_PRT.id, payload)
+
+
 def set_nmea_message_rate(conn: CasicConnection, message_name: str, rate: int) -> bool:
     """Set output rate for a specific NMEA message.
 
@@ -492,6 +549,67 @@ def set_casic_message_rate(conn: CasicConnection, msg_cls: int, msg_id: int, rat
     """
     payload = build_cfg_msg_set(msg_cls, msg_id, rate)
     return conn.send_and_wait_ack(CFG_MSG.cls, CFG_MSG.id, payload)
+
+
+def set_nmea_output(
+    conn: CasicConnection,
+    nmea_out: NMEARates,
+    port_config: PortConfig,
+    changes: ConfigChanges,
+    log: logging.Logger,
+) -> tuple[bool, str | None]:
+    """Configure NMEA output using protoMask optimization.
+
+    For --nmea-out none: disables text output at port level (single CFG-PRT).
+    For --nmea-out <msgs>: ensures text output enabled, then configures
+    individual messages, skipping any already at the correct rate.
+
+    Args:
+        conn: Active CASIC connection
+        nmea_out: Desired NMEA rates (all zeros = disable all)
+        port_config: Current port configuration from CFG-PRT query
+        changes: Tracks which config sections changed
+        log: Logger for status messages
+
+    Returns:
+        (True, None) on success, (False, error_message) on failure
+    """
+    all_disabled = all(r == 0 for r in nmea_out)
+
+    if all_disabled:
+        # Disable text output at port level (skip individual CFG-MSG)
+        if port_config.text_output:
+            if not set_port_text_output(conn, port_config, False):
+                return False, "failed to disable text output on port"
+            log.info("NMEA output disabled")
+            changes.mark_prt()
+        return True, None
+
+    # Ensure text output is enabled
+    if not port_config.text_output:
+        if not set_port_text_output(conn, port_config, True):
+            return False, "failed to enable text output on port"
+        log.info("NMEA output enabled")
+        changes.mark_prt()
+
+    # Query current rates and only change what's needed
+    current_rates = query_nmea_rates(conn, log)
+
+    # Configure individual messages (GSV first - most traffic)
+    for nmea in [NMEA.GSV] + [n for n in NMEA if n != NMEA.GSV]:
+        target = nmea_out[nmea.value]
+        current = current_rates.rates.get(nmea.name, -1) if current_rates else -1
+
+        if target == current:
+            log.debug(f"NMEA {nmea.name} already {'enabled' if target else 'disabled'}")
+            continue
+
+        if not set_nmea_message_rate(conn, nmea.name, target):
+            return False, f"failed to {'enable' if target else 'disable'} NMEA {nmea.name}"
+        log.info(f"NMEA {nmea.name} {'enabled' if target else 'disabled'}")
+        changes.mark_msg()
+
+    return True, None
 
 
 def save_config(conn: CasicConnection, mask: int) -> bool:
@@ -711,18 +829,29 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
                 time_gnss=time_source_to_gnss(tp.time_source),
             )
 
-    # Query NMEA message rates
-    rates = query_nmea_rates(conn)
-    if rates is not None and rates.rates:
-        nmea_out: NMEARates = [0] * len(NMEA)
-        for name, rate in rates.rates.items():
-            try:
-                nmea_out[NMEA[name].value] = rate
-            except KeyError:
-                pass  # Skip unknown NMEA types
-        props["nmea_out"] = nmea_out
+    # Query port config to check if text output is enabled
+    port_config = query_port_config(conn)
 
-    # Query CASIC binary message rates
+    # Query NMEA message rates - but if text output is disabled at port level,
+    # effective NMEA output is all zeros regardless of individual message rates
+    if port_config is not None and not port_config.text_output:
+        # Text output disabled at port level - all NMEA effectively off
+        props["nmea_out"] = [0] * len(NMEA)
+        # Still need to query for CASIC binary rates
+        rates = query_nmea_rates(conn)
+    else:
+        # Text output enabled (or port query failed) - check individual rates
+        rates = query_nmea_rates(conn)
+        if rates is not None and rates.rates:
+            nmea_out: NMEARates = [0] * len(NMEA)
+            for name, rate in rates.rates.items():
+                try:
+                    nmea_out[NMEA[name].value] = rate
+                except KeyError:
+                    pass  # Skip unknown NMEA types
+            props["nmea_out"] = nmea_out
+
+    # Query CASIC binary message rates (always, independent of text output)
     if rates is not None and rates.binary_rates is not None:
         casic_out: set[str] = set()
         for name, rate in rates.binary_rates.items():
@@ -831,22 +960,20 @@ def execute_job(
 
         # Apply NMEA output configuration
         if "nmea_out" in job.props:
-            nmea_out = job.props["nmea_out"]
-            # Set rate for each NMEA message type
-            # GSV first: it generates the most traffic, so disable it early to reduce
-            # bandwidth pressure when reconfiguring at low baud rates
-            for nmea in [NMEA.GSV] + [n for n in NMEA if n != NMEA.GSV]:
-                target_rate = nmea_out[nmea.value]
-                if set_nmea_message_rate(conn, nmea.name, target_rate):
-                    if target_rate > 0:
-                        log.info(f"NMEA {nmea.name} enabled")
-                    else:
-                        log.info(f"NMEA {nmea.name} disabled")
-                    changes.mark_msg()
-                else:
-                    result.success = False
-                    result.error = f"failed to {'enable' if target_rate > 0 else 'disable'} NMEA {nmea.name}"
-                    return result
+            # Query port config to manage protoMask
+            port_config = query_port_config(conn)
+            if port_config is None:
+                result.success = False
+                result.error = "failed to query port configuration"
+                return result
+
+            success, error = set_nmea_output(
+                conn, job.props["nmea_out"], port_config, changes, log
+            )
+            if not success:
+                result.success = False
+                result.error = error
+                return result
 
         # Apply CASIC binary output configuration
         if "casic_out" in job.props:
