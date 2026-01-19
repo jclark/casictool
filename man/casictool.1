@@ -14,6 +14,7 @@ casictool \- configure a GPS receiver using CASIC protocol
 .P
 .PD
 \ \ \ \ [\f[B]\-\-packet\-log\f[R] \f[I]path\f[R]]
+[\f[B]\-\-capture\f[R] \f[I]seconds\f[R]]
 .PD 0
 .P
 .PD
@@ -79,6 +80,15 @@ per second.
 Log to \f[I]path\f[R] a description of the packets sent to and received
 from the GPS receiver.
 The log is in \f[CR].jsonl\f[R] (JSON lines) format.
+.TP
+\f[B]\-\-capture\f[R] \f[I]seconds\f[R]
+Capture packets for \f[I]seconds\f[R] after any configuration is
+complete, logging them to the packet log.
+Requires \f[B]\-\-packet\-log\f[R].
+If \f[I]seconds\f[R] is 0, capture indefinitely until interrupted with
+Ctrl+C.
+Can be used alone (without configuration options) to observe receiver
+output.
 .TP
 \f[B]\-g\f[R], \f[B]\-\-gnss\f[R] \f[I]list\f[R]
 List of GNSS constellations that should be enabled.
@@ -230,6 +240,12 @@ Enable TIM\-TP binary message output:
 .IP
 .EX
 casictool \-d /dev/ttyUSB0 \-s 38400 \-\-casic\-out TIM\-TP
+.EE
+.PP
+Capture packets for 10 seconds to verify configuration:
+.IP
+.EX
+casictool \-d /dev/ttyUSB0 \-s 9600 \-\-nmea\-out RMC \-\-packet\-log packets.jsonl \-\-capture 10
 .EE
 .SH AUTHORS
 James Clark.

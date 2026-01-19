@@ -6,7 +6,7 @@ casictool - configure a GPS receiver using CASIC protocol
 
 **casictool** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-device** *path*] [**\-s**\|**\-\-device-speed** *bps*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*] [**\-\-capture** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-config**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-g**\|**\-\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**,...]\
@@ -37,6 +37,9 @@ The **casictool** command is used to configure a GPS receiver using the CASIC pr
 
 **\-\-packet\-log** *path*
 : Log to *path* a description of the packets sent to and received from the GPS receiver. The log is in `.jsonl` (JSON lines) format.
+
+**\-\-capture** *seconds*
+: Capture packets for *seconds* after any configuration is complete, logging them to the packet log. Requires **\-\-packet\-log**. If *seconds* is 0, capture indefinitely until interrupted with Ctrl+C. Can be used alone (without configuration options) to observe receiver output.
 
 **\-g**, **\-\-gnss** *list*
 : List of GNSS constellations that should be enabled. The *list* parameter is a comma-separated list of:
@@ -140,3 +143,7 @@ Enable only NMEA RMC messages:
 Enable TIM-TP binary message output:
 
     casictool -d /dev/ttyUSB0 -s 38400 --casic-out TIM-TP
+
+Capture packets for 10 seconds to verify configuration:
+
+    casictool -d /dev/ttyUSB0 -s 9600 --nmea-out RMC --packet-log packets.jsonl --capture 10

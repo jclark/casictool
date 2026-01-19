@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 
 import serial
 
@@ -50,6 +51,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=str,
         metavar="PATH",
         help="Log all packets to JSONL file",
+    )
+    parser.add_argument(
+        "--capture",
+        type=float,
+        metavar="SECONDS",
+        help="Capture packets for N seconds after config (0=until interrupted). Requires --packet-log",
     )
     parser.add_argument(
         "--debug",
@@ -198,6 +205,10 @@ def validate_args(args: argparse.Namespace) -> str | None:
     reset_options = [args.reload, args.reset, args.factory_reset]
     if sum(bool(x) for x in reset_options) > 1:
         return "--reload, --reset, and --factory-reset are mutually exclusive"
+
+    # --capture requires --packet-log
+    if args.capture is not None and not args.packet_log:
+        return "--capture requires --packet-log"
 
     return None
 
@@ -428,6 +439,26 @@ def print_config(result: CommandResult, job: ConfigJob) -> None:
             print(result.config_after.format())
 
 
+def capture_packets(conn: CasicConnection, duration: float, log: logging.Logger) -> None:
+    """Capture packets for a specified duration.
+
+    Args:
+        conn: Connection to receiver (packets logged automatically via receive_packet)
+        duration: Seconds to capture (0 = until interrupted)
+        log: Logger for status messages
+    """
+    if duration == 0:
+        # Capture indefinitely until interrupted
+        while True:
+            conn.receive_packet(timeout=0.5)
+    else:
+        # Capture for specified duration
+        start = time.monotonic()
+        while time.monotonic() - start < duration:
+            remaining = duration - (time.monotonic() - start)
+            conn.receive_packet(timeout=min(0.5, remaining))
+
+
 def run_casictool(argv: list[str], log: logging.Logger) -> CommandResult:
     """Run casictool with given arguments.
 
@@ -446,7 +477,7 @@ def run_casictool(argv: list[str], log: logging.Logger) -> CommandResult:
         return CommandResult(success=False, error=error)
 
     # Check if any operation is requested
-    if not has_any_operation(job):
+    if not has_any_operation(job) and args.capture is None:
         # Return empty result; main() will print help
         return CommandResult(success=True, error="no_operation")
 
@@ -465,9 +496,23 @@ def run_casictool(argv: list[str], log: logging.Logger) -> CommandResult:
                     )
             else:
                 version = None
-            result = execute_job(conn, job, log)
-            result.version = version
+
+            # Execute job only if there are operations
+            if has_any_operation(job):
+                result = execute_job(conn, job, log)
+                result.version = version
+            else:
+                result = CommandResult(success=True)
+                result.version = version
+
+            # Capture packets if requested
+            if args.capture is not None:
+                capture_packets(conn, args.capture, log)
+
             return result
+    except KeyboardInterrupt:
+        log.debug("interrupted")
+        return CommandResult(success=True)
     except serial.SerialException as e:
         return CommandResult(success=False, error=str(e))
 
