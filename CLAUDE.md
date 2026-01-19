@@ -29,6 +29,7 @@ A GPS receiver is available for testing:
 - `spec/casic1.md` - NMEA text protocol (standard sentences + PCAS custom commands)
 - `spec/casic2.md` - Binary CASIC protocol (CFG, NAV, TIM, ACK messages)
 - `plan/casictool.md` - Implementation plan with command mappings and payload specifications
+- `man/casictool.1.src.md` - Man page source; run `make -C man` after editing
 
 ## Architecture
 
