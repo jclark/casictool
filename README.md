@@ -1,14 +1,22 @@
 # casictool
 
 A command-line tool for configuring GPS receivers using the CASIC binary protocol.
-[Zhongke Microsysystems](https://www.icofchina.com/) make a range of very inexpensive GPS receivers (ATGM33\*) which use this protocol.
+[Zhongke Microsysystems](https://www.icofchina.com/) make a range of very inexpensive GPS receivers (ATGM332D, ATGM336H) which use this protocol.
 
-## Caveat
+If you have any problems, please open an issue.
 
-This is *not* a production-quality tool.
-It was vibe-coded (using Claude Code Opus 4.5 mostly) as a prototype for adding CASIC support for [SatPulse](https://satpulse.net).
+## Caveats
 
-If you are using tinyGTC, then I strongly recommend staying away from the commands that affect non-volatile memory.
+This has been developed with extensive AI assistance (Claude Code Opus 4.5 mostly).
+It works for me, but use with caution, particularly the options that affect non-volatile memory.
+
+One of the main goals of this is to prototype support for CASIC in [SatPulse](https://satpulse.net).
+When support for CASIC has been added to SatPulse, then the functionality of this tool will be available in `satpulsetool gps`; at that point I will no longer maintain this repository.
+
+There needs to be some spare bandwidth between the GPS receiver and the host for this to work reliably.
+If the speed is 9600 baud, then NMEA GSV sentences can use up most of the bandwidth, particularly if multiple constellations are enabled. On the tinyGTC, the internal connection to the GPS receiver is fixed at 9600 baud, so I recommend you enable only the GPS constellation before you try to run this.
+
+If you are using tinyGTC, then I strongly recommend staying away from the options that affect non-volatile memory.
 If you get the GPS into a state where it doesn't work, you can open the case (remove the four screws on the back), and detach the battery for a few seconds.
 
 ## Installation
