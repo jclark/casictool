@@ -84,3 +84,22 @@ The following message types are ACKed when enabled via CFG-MSG but never actuall
 
 RXM-SENSOR is NAKed (not supported at all).
 
+## PCAS06 Query Response Formats
+
+The spec documents what each PCAS06 info value queries but not the response format. Responses are GPTXT sentences with identifier 02 (notification).
+
+| info | Documented As | Response Format | Example |
+|------|---------------|-----------------|---------|
+| 0 | Firmware version | SW= | `SW=URANUS5,V5.3.0.0` |
+| 1 | Hardware model/Serial | HW= | `HW=AT6558D,0000000000000` |
+| 2 | Working mode | MO= | `MO=GB` |
+| 3 | Customer ID | CI= | `CI=01B94154` |
+| 4 | - | (no response) | - |
+| 5 | Upgrade code info | BS= | `BS=SOC_BootLoader,V6.2.0.2` |
+| 6 | **Undocumented** | IC= | `IC=AT6558D-5N-32-1C520900,AJ03DHL-C1-002138` |
+
+Notes:
+- info=6 returns detailed chip variant and serial number (more useful than info=1)
+- The chip self-reports as "5N-32" while the module label says "5N-31"
+- info=1 HW= serial field may be all zeros; info=6 IC= has the real serial
+
