@@ -10,8 +10,7 @@ from typing import TypedDict
 from casic import (
     ACK_ACK,
     ACK_NAK,
-    BBR_ALL,
-    BBR_NAV_DATA,
+    BBR_RESET,
     CFG_CFG,
     CFG_MASK_ALL,
     CFG_MASK_MSG,
@@ -30,6 +29,9 @@ from casic import (
     MSG_IDS,
     MSG_NAMES,
     NMEA_MESSAGES,
+    RESET_HW_IMMEDIATE,
+    START_COLD,
+    START_FACTORY,
     MessageRatesConfig,
     PortConfig,
     ReceiverConfig,
@@ -631,15 +633,12 @@ def reset_receiver(conn: CasicConnection, factory: bool = False) -> None:
         factory: If True, perform factory reset (clears NVM config).
                  If False, perform cold start (preserves NVM config).
     """
+    nav_bbr_mask = BBR_RESET
     if factory:
-        nav_bbr_mask = BBR_ALL  # Clear everything including config
-        start_mode = 3  # Factory Start
+        start_mode = START_FACTORY
     else:
-        nav_bbr_mask = BBR_NAV_DATA  # Clear nav data, preserve config
-        start_mode = 2  # Cold Start
-
-    reset_mode = 1  # Controlled Software Reset
-    payload = build_cfg_rst(nav_bbr_mask, reset_mode, start_mode)
+        start_mode = START_COLD
+    payload = build_cfg_rst(nav_bbr_mask, RESET_HW_IMMEDIATE, start_mode)
 
     # Note: After reset, receiver may not send ACK before restarting
     # We send the command without waiting for ACK

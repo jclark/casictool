@@ -7,16 +7,15 @@ import pytest
 from casic import (
     ACK_ACK,
     ACK_NAK,
-    BBR_ALL,
     BBR_ALMANAC,
     BBR_CLOCK_DRIFT,
     BBR_CONFIG,
     BBR_EPHEMERIS,
     BBR_HEALTH,
     BBR_IONOSPHERE,
-    BBR_NAV_DATA,
     BBR_OSC_PARAMS,
     BBR_POSITION,
+    BBR_RESET,
     BBR_RTC,
     BBR_UTC_PARAMS,
     CFG_CFG,
@@ -36,6 +35,9 @@ from casic import (
     CFG_TP,
     CLS_ACK,
     CLS_CFG,
+    RESET_HW_IMMEDIATE,
+    START_COLD,
+    START_FACTORY,
     CasicPacket,
     CasicStreamParser,
     MsgID,
@@ -472,20 +474,14 @@ class TestBbrMaskConstants:
         assert BBR_RTC == 0x0100
         assert BBR_CONFIG == 0x0200
 
-    def test_bbr_nav_data_composite(self) -> None:
-        # BBR_NAV_DATA should be bits 0-8 (all nav data, no config)
+    def test_bbr_reset_composite(self) -> None:
+        # BBR_RESET clears all except clock drift and osc params
         expected = (
             BBR_EPHEMERIS | BBR_ALMANAC | BBR_HEALTH | BBR_IONOSPHERE |
-            BBR_POSITION | BBR_CLOCK_DRIFT | BBR_OSC_PARAMS | BBR_UTC_PARAMS | BBR_RTC
+            BBR_POSITION | BBR_UTC_PARAMS | BBR_RTC | BBR_CONFIG
         )
-        assert BBR_NAV_DATA == expected
-        assert BBR_NAV_DATA == 0x01FF
-
-    def test_bbr_all_composite(self) -> None:
-        # BBR_ALL should be bits 0-9 (everything including config)
-        expected = BBR_NAV_DATA | BBR_CONFIG
-        assert BBR_ALL == expected
-        assert BBR_ALL == 0x03FF
+        assert BBR_RESET == expected
+        assert BBR_RESET == 0x039F
 
 
 class TestBuildCfgCfg:
@@ -518,30 +514,19 @@ class TestBuildCfgCfg:
 
 class TestBuildCfgRst:
     def test_cold_start(self) -> None:
-        payload = build_cfg_rst(BBR_NAV_DATA, reset_mode=1, start_mode=2)
+        payload = build_cfg_rst(BBR_RESET, RESET_HW_IMMEDIATE, START_COLD)
         assert len(payload) == 4
         nav_bbr_mask, reset_mode, start_mode = struct.unpack("<HBB", payload)
-        assert nav_bbr_mask == 0x01FF  # BBR_NAV_DATA
-        assert reset_mode == 1  # SW controlled
-        assert start_mode == 2  # Cold start
+        assert nav_bbr_mask == BBR_RESET
+        assert reset_mode == RESET_HW_IMMEDIATE
+        assert start_mode == START_COLD
 
     def test_factory_start(self) -> None:
-        payload = build_cfg_rst(BBR_ALL, reset_mode=1, start_mode=3)
+        payload = build_cfg_rst(BBR_RESET, RESET_HW_IMMEDIATE, START_FACTORY)
         nav_bbr_mask, reset_mode, start_mode = struct.unpack("<HBB", payload)
-        assert nav_bbr_mask == 0x03FF  # BBR_ALL
-        assert reset_mode == 1  # SW controlled
-        assert start_mode == 3  # Factory start
-
-    def test_hot_start(self) -> None:
-        payload = build_cfg_rst(0, reset_mode=1, start_mode=0)
-        nav_bbr_mask, reset_mode, start_mode = struct.unpack("<HBB", payload)
-        assert nav_bbr_mask == 0
-        assert start_mode == 0  # Hot start
-
-    def test_hw_reset(self) -> None:
-        payload = build_cfg_rst(BBR_NAV_DATA, reset_mode=0, start_mode=2)
-        nav_bbr_mask, reset_mode, start_mode = struct.unpack("<HBB", payload)
-        assert reset_mode == 0  # HW immediate
+        assert nav_bbr_mask == BBR_RESET
+        assert reset_mode == RESET_HW_IMMEDIATE
+        assert start_mode == START_FACTORY
 
 
 class TestBuildCfgMsgSet:

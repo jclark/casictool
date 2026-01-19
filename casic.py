@@ -189,9 +189,23 @@ BBR_UTC_PARAMS = 0x0080  # B7
 BBR_RTC = 0x0100  # B8
 BBR_CONFIG = 0x0200  # B9
 
-# Composite BBR masks
-BBR_NAV_DATA = 0x01FF  # All nav data (for cold start)
-BBR_ALL = 0x03FF  # Everything (for factory reset)
+# Reset mask: clear all except clock drift and osc params (learned, not from satellites)
+BBR_RESET = (
+    BBR_EPHEMERIS | BBR_ALMANAC | BBR_HEALTH | BBR_IONOSPHERE |
+    BBR_POSITION | BBR_UTC_PARAMS | BBR_RTC | BBR_CONFIG
+)  # 0x039F
+
+# Start modes for CFG-RST
+START_HOT = 0
+START_WARM = 1
+START_COLD = 2
+START_FACTORY = 3
+
+# Reset modes for CFG-RST
+RESET_HW_IMMEDIATE = 0
+RESET_SW_CONTROLLED = 1
+RESET_SW_GPS_ONLY = 2
+RESET_HW_AFTER_SHUTDOWN = 4
 
 
 def calc_checksum(cls: int, id: int, payload: bytes) -> int:
