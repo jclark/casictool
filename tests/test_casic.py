@@ -289,8 +289,7 @@ class TestPortConfig:
     def test_format(self) -> None:
         cfg = PortConfig(port_id=0, proto_mask=0x33, mode=0x08C0, baud_rate=9600)
         output = cfg.format()
-        assert "9600" in output
-        assert "8N1" in output
+        assert output == "Serial speed: 9600"
 
 
 class TestRateConfig:
@@ -427,19 +426,15 @@ class TestReceiverConfig:
             rate=RateConfig(interval_ms=1000),
         )
         output = config.format()
-        assert "UART0: 9600 baud" in output
+        assert "Serial speed: 9600" in output
         assert "1.0 Hz" in output
 
-    def test_format_multiple_ports(self) -> None:
+    def test_format_single_port(self) -> None:
         config = ReceiverConfig(
-            ports=[
-                PortConfig(port_id=0, proto_mask=0x33, mode=0x08C0, baud_rate=9600),
-                PortConfig(port_id=1, proto_mask=0x33, mode=0x08C0, baud_rate=115200),
-            ],
+            ports=[PortConfig(port_id=1, proto_mask=0x33, mode=0x08C0, baud_rate=115200)],
         )
         output = config.format()
-        assert "UART0: 9600 baud" in output
-        assert "UART1: 115200 baud" in output
+        assert "Serial speed: 115200" in output
 
 
 class TestCfgMaskConstants:

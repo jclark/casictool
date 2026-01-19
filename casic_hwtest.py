@@ -317,6 +317,11 @@ def main() -> int:
         action="store_true",
         help="Suppress info messages (only show warnings and errors)",
     )
+    parser.add_argument(
+        "--uart1",
+        action="store_true",
+        help="Use UART1 instead of UART0 (default)",
+    )
 
     args = parser.parse_args()
 
@@ -355,7 +360,10 @@ def main() -> int:
 
     # Connect to receiver
     try:
-        conn = CasicConnection(args.device, args.speed, packet_log=args.packet_log, log=tool_log)
+        conn = CasicConnection(
+            args.device, args.speed, packet_log=args.packet_log, log=tool_log,
+            uart=1 if args.uart1 else 0,
+        )
     except Exception as e:
         test_log.error(f"could not connect to {args.device}: {e}")
         return 1

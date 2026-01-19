@@ -476,10 +476,6 @@ class PortConfig:
     baud_rate: int
 
     @property
-    def port_name(self) -> str:
-        return f"UART{self.port_id}" if self.port_id in (0, 1) else f"Port {self.port_id}"
-
-    @property
     def binary_input(self) -> bool:
         return bool(self.proto_mask & 0x01)
 
@@ -525,7 +521,7 @@ class PortConfig:
         return f"{self.data_bits}{self.parity}{self.stop_bits}"
 
     def format(self) -> str:
-        return f"{self.port_name}: {self.baud_rate} baud, {self.data_format}"
+        return f"Serial speed: {self.baud_rate}"
 
 
 @dataclass

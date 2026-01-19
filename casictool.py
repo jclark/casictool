@@ -61,6 +61,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Suppress info messages (only show warnings and errors)",
     )
+    parser.add_argument(
+        "--uart1",
+        action="store_true",
+        help="Use UART1 instead of UART0 (default)",
+    )
 
     # Time mode group
     time_mode_group = parser.add_argument_group("Time Mode")
@@ -448,7 +453,8 @@ def run_casictool(argv: list[str], log: logging.Logger) -> CommandResult:
     # Execute the job
     try:
         with CasicConnection(
-            args.device, baudrate=args.device_speed, packet_log=args.packet_log, log=log
+            args.device, baudrate=args.device_speed, packet_log=args.packet_log, log=log,
+            uart=1 if args.uart1 else 0,
         ) as conn:
             # Probe receiver once (skip for factory/cold reset)
             if job.reset not in (ResetMode.FACTORY, ResetMode.COLD):

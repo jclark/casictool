@@ -69,10 +69,12 @@ class CasicConnection:
         timeout: float = 2.0,
         packet_log: str | None = None,
         log: logging.Logger | None = None,
+        uart: int = 0,
     ) -> None:
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
+        self.uart = uart
         self._serial: Serial = serial.Serial(port, baudrate=baudrate, timeout=timeout)
         self._serial.reset_input_buffer()
         self._packet_log: IO[str] | None = None

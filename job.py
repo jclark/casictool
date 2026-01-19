@@ -356,7 +356,8 @@ def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> Re
     # Multi-response queries last (two-tier timeouts)
 
     # Query CFG-PRT (may return multiple responses, one per port)
-    ports: list[PortConfig] = []
+    # We only care about the UART specified in conn.uart
+    target_port: PortConfig | None = None
     conn.send(CFG_PRT.cls, CFG_PRT.id, b"")
     # Wait for responses - use long timeout until we get a real CFG-PRT response
     got_response = False
@@ -374,11 +375,13 @@ def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> Re
                 continue  # ACK means keep waiting for actual response
         # Check for actual CFG-PRT response
         if recv_id.cls == CFG_PRT.cls and recv_id.id == CFG_PRT.id and len(recv_payload) >= 8:
-            ports.append(parse_cfg_prt(recv_payload))
+            port = parse_cfg_prt(recv_payload)
             got_response = True
-    if ports:
-        # Sort by port_id so UART0 comes first
-        config.ports = sorted(ports, key=lambda p: p.port_id)
+            if port.port_id == conn.uart:
+                target_port = port
+                break  # Got the port we want, stop waiting
+    if target_port:
+        config.ports = [target_port]
         if log:
             log.info("got serial port configuration")
     elif log:
