@@ -73,3 +73,14 @@ The timeSource field in CFG-TP has two modes per constellation:
 
 NMEA messages are emitted in a fixed order: GGA, GSV, RMC, ZDA. The order in which messages are enabled does not affect emission order.
 
+## Unimplemented Message Types (ATGM332D-5N31)
+
+The following message types are ACKed when enabled via CFG-MSG but never actually output by the receiver:
+
+- MSG-BDSUTC, MSG-BDSION, MSG-BDSEPH
+- MSG-GPSUTC, MSG-GPSION, MSG-GPSEPH
+- MSG-GLNEPH
+- RXM-MEASX, RXM-SVPOS
+
+RXM-SENSOR is NAKed (not supported at all).
+
