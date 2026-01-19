@@ -717,7 +717,11 @@ class NavEngineConfig:
 
     def format(self) -> str:
         gnss_str = ", ".join(self.gnss_list) if self.gnss_list else "None"
-        return f"Constellations enabled: {gnss_str}"
+        lines = [
+            f"Constellations enabled: {gnss_str}",
+            f"Minimum elevation: {self.min_elev}°",
+        ]
+        return "\n".join(lines)
 
 
 @dataclass
@@ -990,21 +994,27 @@ def build_cfg_tp(
     )
 
 
-def build_cfg_navx(config: NavEngineConfig, nav_system: int | None = None) -> bytes:
+def build_cfg_navx(
+    config: NavEngineConfig,
+    nav_system: int | None = None,
+    min_elev: int | None = None,
+) -> bytes:
     """Build CFG-NAVX payload (44 bytes) from existing config.
 
     Uses read-modify-write approach: takes current config and optionally
-    overrides nav_system field.
+    overrides nav_system and/or min_elev fields.
 
     Args:
         config: Current NavEngineConfig from parse_cfg_navx()
         nav_system: New constellation mask, or None to keep existing
             (B0=GPS, B1=BDS, B2=GLONASS)
+        min_elev: New minimum elevation angle in degrees, or None to keep existing
 
     Returns:
         44-byte payload ready for CFG-NAVX SET command
     """
     system = nav_system if nav_system is not None else config.nav_system
+    elev = min_elev if min_elev is not None else config.min_elev
 
     return struct.pack(
         "<IbBbbBBbbbBHfffffff",
@@ -1016,7 +1026,7 @@ def build_cfg_navx(config: NavEngineConfig, nav_system: int | None = None) -> by
         config.min_cno,
         0,  # res1
         config.ini_fix_3d,
-        config.min_elev,
+        elev,
         config.dr_limit,
         system,
         config.wn_rollover,

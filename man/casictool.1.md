@@ -17,6 +17,8 @@ casictool - configure a GPS receiver using CASIC protocol
 
 \[**-g**\|**--gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**,...\]
 
+\[**--min-elev** *degrees*\]
+
 \[**--time-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**\]
 
 \[**--pps** *width*\]
@@ -77,6 +79,11 @@ BeiDou Navigation Satellite System (China)
 
 **GLO** or **GLONASS**  
 Global Navigation Satellite System (Russia)
+
+**--min-elev** *degrees*  
+Set the minimum satellite elevation angle in degrees (0-90). Satellites
+below this elevation are excluded from navigation. Typical values are
+5-15°.
 
 **--time-gnss** *constellation*  
 GNSS constellation used for timing purposes. The PPS signal is aligned

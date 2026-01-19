@@ -121,6 +121,8 @@ def format_props(props: ConfigProps) -> str:
     if "gnss" in props:
         systems = sorted(g.value for g in props["gnss"])
         parts.append(f"gnss: {{{', '.join(systems)}}}")
+    if "min_elev" in props:
+        parts.append(f"min_elev: {props['min_elev']}°")
     if "time_mode" in props:
         parts.append(f"time_mode: {props['time_mode']}")
     if "time_pulse" in props:
@@ -281,6 +283,13 @@ CASIC_OUT_TESTS: list[ConfigProps] = [
     {"casic_out": set()},
 ]
 
+MIN_ELEV_TESTS: list[ConfigProps] = [
+    {"min_elev": 5},
+    {"min_elev": 15},
+    # Good state: 0° (factory default)
+    {"min_elev": 0},
+]
+
 
 # ============================================================================
 # CLI
@@ -298,6 +307,7 @@ def main() -> int:
     parser.add_argument("--casic-out", action="store_true", help="Test CASIC binary output")
     parser.add_argument("--time-mode", action="store_true", help="Test timing modes")
     parser.add_argument("--pps", action="store_true", help="Test PPS configuration")
+    parser.add_argument("--min-elev", action="store_true", help="Test minimum elevation")
     parser.add_argument(
         "--persist",
         action="store_true",
@@ -350,12 +360,14 @@ def main() -> int:
     run_casic_out = args.casic_out or args.all
     run_time_mode = getattr(args, "time_mode") or args.all
     run_pps = args.pps or args.all
+    run_min_elev = args.min_elev or args.all
     run_persist = args.persist
 
     # Check that at least one test group or --persist is specified
-    if not (run_gnss or run_nmea or run_casic_out or run_time_mode or run_pps or run_persist):
+    if not (run_gnss or run_nmea or run_casic_out or run_time_mode or run_pps or run_min_elev or run_persist):
         parser.error(
-            "No test groups specified. Use --gnss, --nmea-out, --casic-out, --time-mode, --pps, --persist, or --all"
+            "No test groups specified. "
+            "Use --gnss, --nmea-out, --casic-out, --time-mode, --pps, --min-elev, --persist, or --all"
         )
 
     # Connect to receiver
@@ -384,7 +396,7 @@ def main() -> int:
     try:
         # Run normal (RAM-only) tests if not --persist-only mode
         # NMEA/CASIC output runs first to minimize output before other tests
-        if not run_persist or (run_gnss or run_nmea or run_casic_out or run_time_mode or run_pps):
+        if not run_persist or (run_gnss or run_nmea or run_casic_out or run_time_mode or run_pps or run_min_elev):
             if run_nmea:
                 results["NMEA"] = run_tests(conn, "NMEA", NMEA_TESTS, test_log, tool_log)
 
@@ -399,6 +411,9 @@ def main() -> int:
 
             if run_pps:
                 results["PPS"] = run_tests(conn, "PPS", PPS_TESTS, test_log, tool_log)
+
+            if run_min_elev:
+                results["Min Elev"] = run_tests(conn, "min elev", MIN_ELEV_TESTS, test_log, tool_log)
 
         # Run persist tests if --persist specified
         if run_persist:
@@ -424,6 +439,11 @@ def main() -> int:
 
             if run_pps:
                 results["PPS Persist"] = run_persist_tests(conn, "PPS", PPS_TESTS, test_log, tool_log)
+
+            if run_min_elev:
+                results["Min Elev Persist"] = run_persist_tests(
+                    conn, "min elev", MIN_ELEV_TESTS, test_log, tool_log
+                )
 
     finally:
         conn.close()

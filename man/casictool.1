@@ -33,6 +33,10 @@ casictool \- configure a GPS receiver using CASIC protocol
 .PD 0
 .P
 .PD
+\ \ \ \ [\f[B]\-\-min\-elev\f[R] \f[I]degrees\f[R]]
+.PD 0
+.P
+.PD
 \ \ \ \ [\f[B]\-\-time\-gnss\f[R]
 \f[B]GPS\f[R]|\f[B]GAL\f[R]|\f[B]BDS\f[R]|\f[B]GLO\f[R]]
 .PD 0
@@ -105,6 +109,11 @@ BeiDou Navigation Satellite System (China)
 .TP
 \f[B]GLO\f[R] or \f[B]GLONASS\f[R]
 Global Navigation Satellite System (Russia)
+.TP
+\f[B]\-\-min\-elev\f[R] \f[I]degrees\f[R]
+Set the minimum satellite elevation angle in degrees (0\-90).
+Satellites below this elevation are excluded from navigation.
+Typical values are 5\-15°.
 .TP
 \f[B]\-\-time\-gnss\f[R] \f[I]constellation\f[R]
 GNSS constellation used for timing purposes.

@@ -161,6 +161,7 @@ class ConfigProps(TypedDict, total=False):
     """Properties that can be set/queried on the receiver."""
 
     gnss: set[GNSS]  # enabled constellations
+    min_elev: int  # minimum satellite elevation angle in degrees (-90 to 90)
     time_mode: TimeMode  # mobile, survey, or fixed position mode
     time_pulse: TimePulse  # PPS configuration
     nmea_out: NMEARates  # NMEA message output rates
@@ -458,6 +459,29 @@ def set_gnss(conn: CasicConnection, nav_system: int) -> bool:
     # Parse and modify
     config = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
     payload = build_cfg_navx(config, nav_system=nav_system)
+
+    # Send and wait for ACK
+    return conn.send_and_wait_ack(CFG_NAVX.cls, CFG_NAVX.id, payload)
+
+
+def set_min_elev(conn: CasicConnection, min_elev: int) -> bool:
+    """Configure minimum satellite elevation angle using read-modify-write.
+
+    Args:
+        conn: Active CASIC connection
+        min_elev: Minimum elevation angle in degrees (-90 to 90)
+
+    Returns:
+        True if ACK received, False on NAK or timeout
+    """
+    # Query current config
+    result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
+    if not result.success:
+        return False
+
+    # Parse and modify
+    config = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
+    payload = build_cfg_navx(config, min_elev=min_elev)
 
     # Send and wait for ACK
     return conn.send_and_wait_ack(CFG_NAVX.cls, CFG_NAVX.id, payload)
@@ -791,11 +815,12 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
     """Query receiver and return ConfigProps representation."""
     props: ConfigProps = {}
 
-    # Query GNSS constellations (CFG-NAVX)
+    # Query GNSS constellations and min elevation (CFG-NAVX)
     result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
     if result.success:
         navx = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
         props["gnss"] = gnss_mask_to_set(navx.nav_system)
+        props["min_elev"] = navx.min_elev
 
     # Query timing mode (CFG-TMODE)
     result = conn.poll(CFG_TMODE.cls, CFG_TMODE.id)
@@ -903,6 +928,17 @@ def execute_job(
             else:
                 result.success = False
                 result.error = "failed to set GNSS constellations"
+                return result
+
+        # Apply minimum elevation configuration
+        if "min_elev" in job.props:
+            elev = job.props["min_elev"]
+            if set_min_elev(conn, elev):
+                log.info(f"minimum elevation: {elev}°")
+                changes.mark_nav()
+            else:
+                result.success = False
+                result.error = "failed to set minimum elevation"
                 return result
 
         # Apply timing mode configuration

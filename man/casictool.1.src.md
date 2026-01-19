@@ -10,6 +10,7 @@ casictool - configure a GPS receiver using CASIC protocol
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-config**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-save**] [**\-\-save\-all**] [**\-\-reset**] [**\-\-reload**] [**\-\-factory\-reset**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-g**\|**\-\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-min\-elev** *degrees*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-time\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-pps** *width*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-mobile**] [**\-\-fixed\-pos\-ecef** *X,Y,Z*] [**\-\-fixed\-pos\-acc** *meters*]\
@@ -55,6 +56,9 @@ The **casictool** command is used to configure a GPS receiver using the CASIC pr
 
   **GLO** or **GLONASS**
   : Global Navigation Satellite System (Russia)
+
+**\-\-min\-elev** *degrees*
+: Set the minimum satellite elevation angle in degrees (0-90). Satellites below this elevation are excluded from navigation. Typical values are 5-15°.
 
 **\-\-time\-gnss** *constellation*
 : GNSS constellation used for timing purposes. The PPS signal is aligned to the system time of this GNSS. (The system times of different GNSSs can differ by tens of nanoseconds.) Valid values are GPS, GAL, BDS, and GLO.

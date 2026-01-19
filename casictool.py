@@ -140,6 +140,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Comma-separated list of GNSS constellations (GPS,GAL,BDS,GLO) that should be enabled. "
         "Constellations not listed will be disabled."
     )
+    gnss_group.add_argument(
+        "--min-elev",
+        type=int,
+        metavar="DEG",
+        help="Minimum satellite elevation angle in degrees (0-90)",
+    )
 
     # Time pulse (PPS) group
     pps_group = parser.add_argument_group("Time Pulse (PPS)")
@@ -209,6 +215,10 @@ def validate_args(args: argparse.Namespace) -> str | None:
     # --capture requires --packet-log
     if args.capture is not None and not args.packet_log:
         return "--capture requires --packet-log"
+
+    # Validate min_elev range (CLI: 0-90)
+    if args.min_elev is not None and not (0 <= args.min_elev <= 90):
+        return "--min-elev must be between 0 and 90 degrees"
 
     return None
 
@@ -369,6 +379,10 @@ def build_job(args: argparse.Namespace) -> tuple[ConfigJob, str | None]:
             props["gnss"] = parse_gnss_arg(args.gnss)
         except ValueError as e:
             return ConfigJob(), str(e)
+
+    # Set minimum elevation
+    if args.min_elev is not None:
+        props["min_elev"] = args.min_elev
 
     # Parse and set PPS configuration
     if args.pps is not None or args.time_gnss:
