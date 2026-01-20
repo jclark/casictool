@@ -603,82 +603,51 @@ class TestParseNmeaOut:
 class TestBuildCfgNavx:
     def test_gps_only(self) -> None:
         """Test building payload with GPS only."""
-        config = NavEngineConfig(
-            mask=0xFFFF, dyn_model=0, fix_mode=3, min_svs=4, max_svs=12,
-            min_cno=6, ini_fix_3d=1, min_elev=5, dr_limit=60,
-            nav_system=0x07, wn_rollover=2000, fixed_alt=0.0, fixed_alt_var=0.0,
-            p_dop=25.0, t_dop=25.0, p_acc=100.0, t_acc=100.0, static_hold_th=0.0
-        )
-        payload = build_cfg_navx(config, nav_system=0x01)
+        payload = build_cfg_navx(nav_system=0x01)
         assert len(payload) == 44
         # Check nav_system is at offset 13
         assert payload[13] == 0x01
 
     def test_all_constellations(self) -> None:
         """Test building payload with all constellations enabled."""
-        config = NavEngineConfig(
-            mask=0xFFFF, dyn_model=0, fix_mode=3, min_svs=4, max_svs=12,
-            min_cno=6, ini_fix_3d=1, min_elev=5, dr_limit=60,
-            nav_system=0x01, wn_rollover=2000, fixed_alt=0.0, fixed_alt_var=0.0,
-            p_dop=25.0, t_dop=25.0, p_acc=100.0, t_acc=100.0, static_hold_th=0.0
-        )
-        payload = build_cfg_navx(config, nav_system=0x07)
+        payload = build_cfg_navx(nav_system=0x07)
         assert payload[13] == 0x07
 
-    def test_preserves_other_fields(self) -> None:
-        """Test that other fields are preserved when only changing nav_system."""
-        config = NavEngineConfig(
-            mask=0xFFFF, dyn_model=3, fix_mode=2, min_svs=4, max_svs=12,
-            min_cno=6, ini_fix_3d=1, min_elev=10, dr_limit=60,
-            nav_system=0x07, wn_rollover=2000, fixed_alt=100.0, fixed_alt_var=1.0,
-            p_dop=25.0, t_dop=25.0, p_acc=100.0, t_acc=100.0, static_hold_th=0.5
-        )
-        payload = build_cfg_navx(config, nav_system=0x01)
-        # Parse the payload back to verify fields preserved
-        parsed = parse_cfg_navx(payload)
-        assert parsed.dyn_model == 3
-        assert parsed.fix_mode == 2
-        assert parsed.min_elev == 10
-        assert parsed.nav_system == 0x01  # Changed
-        assert parsed.fixed_alt == 100.0
+    def test_nav_system_mask_bit(self) -> None:
+        """Test that nav_system sets NAVX_MASK_NAV_SYSTEM bit."""
+        from casic import NAVX_MASK_NAV_SYSTEM
+        payload = build_cfg_navx(nav_system=0x01)
+        mask = struct.unpack("<I", payload[0:4])[0]
+        assert mask == NAVX_MASK_NAV_SYSTEM
 
-    def test_none_nav_system_keeps_existing(self) -> None:
-        """Test that nav_system=None keeps existing value."""
-        config = NavEngineConfig(
-            mask=0xFFFF, dyn_model=0, fix_mode=3, min_svs=4, max_svs=12,
-            min_cno=6, ini_fix_3d=1, min_elev=5, dr_limit=60,
-            nav_system=0x05, wn_rollover=2000, fixed_alt=0.0, fixed_alt_var=0.0,
-            p_dop=25.0, t_dop=25.0, p_acc=100.0, t_acc=100.0, static_hold_th=0.0
-        )
-        payload = build_cfg_navx(config, nav_system=None)
-        assert payload[13] == 0x05
+    def test_min_elev_mask_bit(self) -> None:
+        """Test that min_elev sets NAVX_MASK_MIN_ELEV bit."""
+        from casic import NAVX_MASK_MIN_ELEV
+        payload = build_cfg_navx(min_elev=10)
+        mask = struct.unpack("<I", payload[0:4])[0]
+        assert mask == NAVX_MASK_MIN_ELEV
+        # Check min_elev value at offset 11
+        assert payload[11] == 10
+
+    def test_combined_mask_bits(self) -> None:
+        """Test that setting both nav_system and min_elev sets both mask bits."""
+        from casic import NAVX_MASK_MIN_ELEV, NAVX_MASK_NAV_SYSTEM
+        payload = build_cfg_navx(nav_system=0x07, min_elev=15)
+        mask = struct.unpack("<I", payload[0:4])[0]
+        assert mask == (NAVX_MASK_NAV_SYSTEM | NAVX_MASK_MIN_ELEV)
+        assert payload[11] == 15  # min_elev
+        assert payload[13] == 0x07  # nav_system
+
+    def test_none_values_zero_mask(self) -> None:
+        """Test that all None values result in zero mask."""
+        payload = build_cfg_navx()
+        mask = struct.unpack("<I", payload[0:4])[0]
+        assert mask == 0
 
     def test_payload_structure(self) -> None:
-        """Test payload has correct structure."""
-        config = NavEngineConfig(
-            mask=0xFFFF, dyn_model=0, fix_mode=3, min_svs=4, max_svs=12,
-            min_cno=6, ini_fix_3d=1, min_elev=5, dr_limit=60,
-            nav_system=0x07, wn_rollover=2000, fixed_alt=0.0, fixed_alt_var=0.0,
-            p_dop=25.0, t_dop=25.0, p_acc=100.0, t_acc=100.0, static_hold_th=0.0
-        )
-        payload = build_cfg_navx(config)
-        # Mask should be 0xFFFFFFFF (apply all)
-        mask = struct.unpack("<I", payload[0:4])[0]
-        assert mask == 0xFFFFFFFF
-
-    def test_roundtrip(self) -> None:
-        """Test parse -> build -> parse roundtrip."""
-        original = struct.pack(
-            "<IbBbbBBbbbBHfffffff",
-            0xFFFF, 0, 3, 4, 12, 6, 0, 1, 5, 60, 0x07, 2000,
-            0.0, 0.0, 25.0, 25.0, 100.0, 100.0, 0.0
-        )
-        config = parse_cfg_navx(original)
-        rebuilt = build_cfg_navx(config)
-        reparsed = parse_cfg_navx(rebuilt)
-        assert reparsed.nav_system == config.nav_system
-        assert reparsed.dyn_model == config.dyn_model
-        assert reparsed.fix_mode == config.fix_mode
+        """Test payload has correct length."""
+        payload = build_cfg_navx(nav_system=0x07)
+        assert len(payload) == 44
 
 
 class TestParseGnssArg:

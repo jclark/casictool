@@ -436,13 +436,7 @@ def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> Re
 
 
 def set_gnss(conn: CasicConnection, nav_system: int) -> bool:
-    """Configure GNSS constellation selection using read-modify-write.
-
-    Steps:
-    1. Query current CFG-NAVX configuration
-    2. Modify nav_system field only
-    3. Send complete payload back to receiver
-    4. Wait for ACK
+    """Configure GNSS constellation selection.
 
     Args:
         conn: Active CASIC connection
@@ -451,21 +445,12 @@ def set_gnss(conn: CasicConnection, nav_system: int) -> bool:
     Returns:
         True if ACK received, False on NAK or timeout
     """
-    # Query current config
-    result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
-    if not result.success:
-        return False
-
-    # Parse and modify
-    config = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
-    payload = build_cfg_navx(config, nav_system=nav_system)
-
-    # Send and wait for ACK
+    payload = build_cfg_navx(nav_system=nav_system)
     return conn.send_and_wait_ack(CFG_NAVX.cls, CFG_NAVX.id, payload)
 
 
 def set_min_elev(conn: CasicConnection, min_elev: int) -> bool:
-    """Configure minimum satellite elevation angle using read-modify-write.
+    """Configure minimum satellite elevation angle.
 
     Args:
         conn: Active CASIC connection
@@ -474,16 +459,7 @@ def set_min_elev(conn: CasicConnection, min_elev: int) -> bool:
     Returns:
         True if ACK received, False on NAK or timeout
     """
-    # Query current config
-    result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
-    if not result.success:
-        return False
-
-    # Parse and modify
-    config = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
-    payload = build_cfg_navx(config, min_elev=min_elev)
-
-    # Send and wait for ACK
+    payload = build_cfg_navx(min_elev=min_elev)
     return conn.send_and_wait_ack(CFG_NAVX.cls, CFG_NAVX.id, payload)
 
 
