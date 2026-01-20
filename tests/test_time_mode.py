@@ -1,4 +1,4 @@
-"""Tests for Phase 6: Timing mode configuration."""
+"""Tests for Phase 6: Time mode configuration."""
 
 import struct
 

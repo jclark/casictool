@@ -46,8 +46,8 @@ from casic import (
     PortConfig,
     RateConfig,
     ReceiverConfig,
+    TimeModeConfig,
     TimePulseConfig,
-    TimingModeConfig,
     UnknownBytes,
     build_cfg_cfg,
     build_cfg_msg_set,
@@ -352,9 +352,9 @@ class TestTimePulseConfig:
         assert "disabled" in cfg.format()
 
 
-class TestTimingModeConfig:
+class TestTimeModeConfig:
     def test_mode_str(self) -> None:
-        cfg = TimingModeConfig(
+        cfg = TimeModeConfig(
             mode=0, fixed_pos_x=0, fixed_pos_y=0, fixed_pos_z=0,
             fixed_pos_var=0, svin_min_dur=0, svin_var_limit=0
         )
@@ -369,7 +369,7 @@ class TestTimingModeConfig:
         assert cfg.fixed_pos_z == 3.0
 
     def test_format_auto(self) -> None:
-        cfg = TimingModeConfig(
+        cfg = TimeModeConfig(
             mode=0, fixed_pos_x=0, fixed_pos_y=0, fixed_pos_z=0,
             fixed_pos_var=0, svin_min_dur=0, svin_var_limit=0
         )

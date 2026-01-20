@@ -305,7 +305,7 @@ def main() -> int:
     parser.add_argument("--gnss", action="store_true", help="Test GNSS configuration")
     parser.add_argument("--nmea-out", action="store_true", help="Test NMEA output")
     parser.add_argument("--casic-out", action="store_true", help="Test CASIC binary output")
-    parser.add_argument("--time-mode", action="store_true", help="Test timing modes")
+    parser.add_argument("--time-mode", action="store_true", help="Test time modes")
     parser.add_argument("--pps", action="store_true", help="Test PPS configuration")
     parser.add_argument("--min-elev", action="store_true", help="Test minimum elevation")
     parser.add_argument(

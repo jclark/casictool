@@ -107,7 +107,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Fixed position accuracy in meters (default: 1)",
     )
     time_mode_group.add_argument(
-        "--mobile", action="store_true", help="Disable timing mode"
+        "--mobile", action="store_true", help="Disable time mode"
     )
 
     # NMEA message output group
@@ -198,7 +198,7 @@ def validate_args(args: argparse.Namespace) -> str | None:
 
     Returns error message or None if valid.
     """
-    # Check mutual exclusivity of timing mode options
+    # Check mutual exclusivity of time mode options
     mode_options = [args.survey, args.fixed_pos_ecef, args.mobile]
     if sum(bool(x) for x in mode_options) > 1:
         return "--survey, --fixed-pos-ecef, and --mobile are mutually exclusive"
@@ -345,7 +345,7 @@ def build_job(args: argparse.Namespace) -> tuple[ConfigJob, str | None]:
     """
     props: ConfigProps = {}
 
-    # Parse and set timing mode
+    # Parse and set time mode
     if args.survey:
         props["time_mode"] = SurveyMode(min_dur=args.survey_time, acc=args.survey_acc)
 

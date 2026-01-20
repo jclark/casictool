@@ -375,7 +375,7 @@ def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> Re
     # Query CFG-TMODE
     result = conn.poll(CFG_TMODE.cls, CFG_TMODE.id)
     if result.success:
-        config.timing_mode = parse_cfg_tmode(result.payload)  # type: ignore[arg-type]
+        config.time_mode = parse_cfg_tmode(result.payload)  # type: ignore[arg-type]
         if log:
             log.info("got time mode configuration")
     else:
@@ -822,7 +822,7 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
         props["gnss"] = gnss_mask_to_set(navx.nav_system)
         props["min_elev"] = navx.min_elev
 
-    # Query timing mode (CFG-TMODE)
+    # Query time mode (CFG-TMODE)
     result = conn.poll(CFG_TMODE.cls, CFG_TMODE.id)
     if result.success:
         tmode = parse_cfg_tmode(result.payload)  # type: ignore[arg-type]
@@ -941,7 +941,7 @@ def execute_job(
                 result.error = "failed to set minimum elevation"
                 return result
 
-        # Apply timing mode configuration
+        # Apply time mode configuration
         if "time_mode" in job.props:
             time_mode = job.props["time_mode"]
             if isinstance(time_mode, MobileMode):

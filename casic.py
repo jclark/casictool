@@ -634,8 +634,8 @@ class TimePulseConfig:
 
 
 @dataclass
-class TimingModeConfig:
-    """CFG-TMODE response: timing mode configuration."""
+class TimeModeConfig:
+    """CFG-TMODE response: time mode configuration."""
 
     mode: int
     fixed_pos_x: float
@@ -732,7 +732,7 @@ class ReceiverConfig:
     rate: RateConfig | None = None
     message_rates: MessageRatesConfig | None = None
     time_pulse: TimePulseConfig | None = None
-    timing_mode: TimingModeConfig | None = None
+    time_mode: TimeModeConfig | None = None
     nav_engine: NavEngineConfig | None = None
 
     def format(self) -> str:
@@ -741,8 +741,8 @@ class ReceiverConfig:
             sections.append(self.nav_engine.format())
         if self.time_pulse is not None:
             sections.append(self.time_pulse.format())
-        if self.timing_mode is not None:
-            sections.append(self.timing_mode.format())
+        if self.time_mode is not None:
+            sections.append(self.time_mode.format())
         if self.rate is not None:
             sections.append(self.rate.format())
         if self.message_rates is not None:
@@ -797,7 +797,7 @@ def parse_cfg_tp(payload: bytes) -> TimePulseConfig:
     )
 
 
-def parse_cfg_tmode(payload: bytes) -> TimingModeConfig:
+def parse_cfg_tmode(payload: bytes) -> TimeModeConfig:
     """Parse CFG-TMODE response payload (40 bytes).
 
     Note: The mode field is documented as U4 but the receiver returns
@@ -808,7 +808,7 @@ def parse_cfg_tmode(payload: bytes) -> TimingModeConfig:
     mode, _reserved, pos_x, pos_y, pos_z, pos_var, svin_dur, svin_var = struct.unpack(
         "<HHdddfIf", payload[:40]
     )
-    return TimingModeConfig(
+    return TimeModeConfig(
         mode=mode,
         fixed_pos_x=pos_x,
         fixed_pos_y=pos_y,

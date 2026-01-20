@@ -108,7 +108,7 @@ Defines the mechanism for receiver message input and output. When the receiver r
 | CFG-TP | 0x06 0x03 | 0/16 | Query/Set | Query/Configure receiver PPS related parameters |
 | CFG-RATE | 0x06 0x04 | 0/4 | Query/Set | Query/Configure receiver navigation rate |
 | CFG-CFG | 0x06 0x05 | 4 | Set | Clear, save, and load configuration information |
-| CFG-TMODE | 0x06 0x06 | 0/28 | Query/Set | Query/Configure receiver PPS timing mode |
+| CFG-TMODE | 0x06 0x06 | 0/28 | Query/Set | Query/Configure receiver time mode |
 | CFG-NAVX | 0x06 0x07 | 0/44 | Query/Set | Query/Professional configuration of navigation engine parameters |
 | CFG-GROUP | 0x06 0x08 | 0/56 | Query/Set | Query/Configure GLONASS group delay parameters |
 | **Class MSG** |  |  | **MSG** | **Receiver Satellite Message Info** |
@@ -856,7 +856,7 @@ Special Case: For RXM\_SENSOR (0x03 0x07), rate sets samples per second.
 
 | Offset | Type | Name | Unit | Description |
 | :---- | :---- | :---- | :---- | :---- |
-| 0 | U4 | mode |  | Timing Mode (0=Auto, 1=Survey-In, 2=Fixed) |
+| 0 | U4 | mode |  | Time Mode (0=Auto, 1=Survey-In, 2=Fixed) |
 | 4 | R8 | fixedPosX | m | ECEF X |
 | 12 | R8 | fixedPosY | m | ECEF Y |
 | 20 | R8 | fixedPosZ | m | ECEF Z |
