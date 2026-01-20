@@ -188,6 +188,27 @@ NAVX_MASK_P_DOP = 0x0800  # B11: Apply position DOP limit
 NAVX_MASK_T_DOP = 0x1000  # B12: Apply time DOP limit
 NAVX_MASK_STATIC_HOLD = 0x2000  # B13: Apply static hold setting
 
+# CFG-NAVX dynamic model values
+DYN_MODEL_PORTABLE = 0
+DYN_MODEL_STATIONARY = 1
+DYN_MODEL_PEDESTRIAN = 2
+DYN_MODEL_AUTOMOTIVE = 3
+DYN_MODEL_MARINE = 4
+DYN_MODEL_AIRBORNE_1G = 5
+DYN_MODEL_AIRBORNE_2G = 6
+DYN_MODEL_AIRBORNE_4G = 7
+
+DYN_MODEL_NAMES = {
+    0: "Portable",
+    1: "Stationary",
+    2: "Pedestrian",
+    3: "Automotive",
+    4: "Marine",
+    5: "Airborne1G",
+    6: "Airborne2G",
+    7: "Airborne4G",
+}
+
 # Port IDs for CFG-PRT
 PORT_UART0 = 0x00
 PORT_UART1 = 0x01
@@ -1013,6 +1034,7 @@ def build_cfg_tp(
 def build_cfg_navx(
     nav_system: int | None = None,
     min_elev: int | None = None,
+    dyn_model: int | None = None,
 ) -> bytes:
     """Build CFG-NAVX payload with targeted mask bits.
 
@@ -1022,6 +1044,7 @@ def build_cfg_navx(
     Args:
         nav_system: Constellation mask (B0=GPS, B1=BDS, B2=GLO)
         min_elev: Minimum satellite elevation in degrees
+        dyn_model: Dynamic model (0=Portable, 1=Stationary, etc.)
 
     Returns:
         44-byte CFG-NAVX payload
@@ -1031,11 +1054,13 @@ def build_cfg_navx(
         mask |= NAVX_MASK_NAV_SYSTEM
     if min_elev is not None:
         mask |= NAVX_MASK_MIN_ELEV
+    if dyn_model is not None:
+        mask |= NAVX_MASK_DYN_MODEL
 
     return struct.pack(
         "<IbBbbBBbbbBHfffffff",
         mask,
-        0,  # dyn_model
+        dyn_model or 0,
         0,  # fix_mode
         0,  # min_svs
         0,  # max_svs

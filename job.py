@@ -25,6 +25,8 @@ from casic import (
     CFG_TMODE,
     CFG_TP,
     CLS_NMEA,
+    DYN_MODEL_PORTABLE,
+    DYN_MODEL_STATIONARY,
     MON_VER,
     MSG_IDS,
     MSG_NAMES,
@@ -162,6 +164,7 @@ class ConfigProps(TypedDict, total=False):
 
     gnss: set[GNSS]  # enabled constellations
     min_elev: int  # minimum satellite elevation angle in degrees (-90 to 90)
+    dyn_model: int  # dynamic model (0=Portable, 1=Stationary, etc.) - internal use only
     time_mode: TimeMode  # mobile, survey, or fixed position mode
     time_pulse: TimePulse  # PPS configuration
     nmea_out: NMEARates  # NMEA message output rates
@@ -464,13 +467,20 @@ def set_min_elev(conn: CasicConnection, min_elev: int) -> bool:
 
 
 def set_survey_mode(conn: CasicConnection, min_dur: int, acc: float) -> bool:
-    """Configure receiver for survey-in mode."""
+    """Configure receiver for survey-in mode.
+
+    Also sets dyn_model to Stationary for optimal time mode performance.
+    """
     payload = build_cfg_tmode(
         mode=1,  # Survey-In
         survey_min_dur=min_dur,
         survey_acc=acc,
     )
-    return conn.send_and_wait_ack(CFG_TMODE.cls, CFG_TMODE.id, payload)
+    if not conn.send_and_wait_ack(CFG_TMODE.cls, CFG_TMODE.id, payload):
+        return False
+    # Set dyn_model to Stationary
+    payload = build_cfg_navx(dyn_model=DYN_MODEL_STATIONARY)
+    return conn.send_and_wait_ack(CFG_NAVX.cls, CFG_NAVX.id, payload)
 
 
 def set_fixed_position(
@@ -478,19 +488,33 @@ def set_fixed_position(
     ecef: tuple[float, float, float],
     acc: float,
 ) -> bool:
-    """Configure receiver with fixed ECEF position."""
+    """Configure receiver with fixed ECEF position.
+
+    Also sets dyn_model to Stationary for optimal time mode performance.
+    """
     payload = build_cfg_tmode(
         mode=2,  # Fixed
         fixed_pos=ecef,
         fixed_pos_acc=acc,
     )
-    return conn.send_and_wait_ack(CFG_TMODE.cls, CFG_TMODE.id, payload)
+    if not conn.send_and_wait_ack(CFG_TMODE.cls, CFG_TMODE.id, payload):
+        return False
+    # Set dyn_model to Stationary
+    payload = build_cfg_navx(dyn_model=DYN_MODEL_STATIONARY)
+    return conn.send_and_wait_ack(CFG_NAVX.cls, CFG_NAVX.id, payload)
 
 
 def set_mobile_mode(conn: CasicConnection) -> bool:
-    """Configure receiver for mobile/auto mode."""
+    """Configure receiver for mobile/auto mode.
+
+    Also sets dyn_model to Portable for mobile operation.
+    """
     payload = build_cfg_tmode(mode=0)  # Auto
-    return conn.send_and_wait_ack(CFG_TMODE.cls, CFG_TMODE.id, payload)
+    if not conn.send_and_wait_ack(CFG_TMODE.cls, CFG_TMODE.id, payload):
+        return False
+    # Set dyn_model to Portable
+    payload = build_cfg_navx(dyn_model=DYN_MODEL_PORTABLE)
+    return conn.send_and_wait_ack(CFG_NAVX.cls, CFG_NAVX.id, payload)
 
 
 def set_port_text_output(conn: CasicConnection, port: PortConfig, enable: bool) -> bool:
@@ -791,12 +815,13 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
     """Query receiver and return ConfigProps representation."""
     props: ConfigProps = {}
 
-    # Query GNSS constellations and min elevation (CFG-NAVX)
+    # Query GNSS constellations, min elevation, and dyn_model (CFG-NAVX)
     result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
     if result.success:
         navx = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
         props["gnss"] = gnss_mask_to_set(navx.nav_system)
         props["min_elev"] = navx.min_elev
+        props["dyn_model"] = navx.dyn_model
 
     # Query time mode (CFG-TMODE)
     result = conn.poll(CFG_TMODE.cls, CFG_TMODE.id)

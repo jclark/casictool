@@ -11,6 +11,7 @@ import logging
 import sys
 from dataclasses import dataclass
 
+from casic import DYN_MODEL_NAMES, DYN_MODEL_PORTABLE, DYN_MODEL_STATIONARY
 from casictool import LevelFormatter
 from connection import CasicConnection
 from job import (
@@ -123,6 +124,9 @@ def format_props(props: ConfigProps) -> str:
         parts.append(f"gnss: {{{', '.join(systems)}}}")
     if "min_elev" in props:
         parts.append(f"min_elev: {props['min_elev']}°")
+    if "dyn_model" in props:
+        name = DYN_MODEL_NAMES.get(props["dyn_model"], str(props["dyn_model"]))
+        parts.append(f"dyn_model: {name}")
     if "time_mode" in props:
         parts.append(f"time_mode: {props['time_mode']}")
     if "time_pulse" in props:
@@ -256,13 +260,13 @@ NMEA_TESTS: list[ConfigProps] = [
 TEST_ECEF = (-1144698.0455, 6090335.4099, 1504171.3914)
 
 TIME_MODE_TESTS: list[ConfigProps] = [
-    # Survey-in mode with different parameters
-    {"time_mode": SurveyMode(min_dur=60, acc=50.0)},
-    {"time_mode": SurveyMode(min_dur=120, acc=25.0)},
-    # Fixed position mode
-    {"time_mode": FixedMode(ecef=TEST_ECEF, acc=10.0)},
-    # Good state: mobile mode (last test leaves receiver in clean state)
-    {"time_mode": MobileMode()},
+    # Survey-in mode with different parameters (dyn_model auto-set to Stationary)
+    {"time_mode": SurveyMode(min_dur=60, acc=50.0), "dyn_model": DYN_MODEL_STATIONARY},
+    {"time_mode": SurveyMode(min_dur=120, acc=25.0), "dyn_model": DYN_MODEL_STATIONARY},
+    # Fixed position mode (dyn_model auto-set to Stationary)
+    {"time_mode": FixedMode(ecef=TEST_ECEF, acc=10.0), "dyn_model": DYN_MODEL_STATIONARY},
+    # Good state: mobile mode (dyn_model auto-set to Portable)
+    {"time_mode": MobileMode(), "dyn_model": DYN_MODEL_PORTABLE},
 ]
 
 PPS_TESTS: list[ConfigProps] = [
