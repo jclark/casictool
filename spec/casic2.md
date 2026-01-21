@@ -332,15 +332,16 @@ Upper 4 bits indicate UTC parameter validity; Lower 4 bits indicate Ionosphere p
 | 0 | U4 | runTime | ms | Running time since boot/reset |
 | 4 | R4 | tAcc | s² | Time estimation accuracy (1/c²) |
 | 8 | R4 | msErr | ms | Residual error after rounding milliseconds |
-| 12 | U2 | year | year | UTC Year (1999\~2099) |
-| 14 | U1 | month | month | UTC Month (1\~12) |
-| 15 | U1 | day | day | UTC Day (1\~31) |
-| 16 | U1 | hour | hour | UTC Hour (0\~23) |
-| 17 | U1 | min | min | UTC Minute (0\~59) |
-| 18 | U1 | sec | s | UTC Second (0\~59) |
-| 19 | U1 | valid |  | Time valid flag (Remark \[1\]) |
-| 20 | U1 | timeSrc |  | Timing system flag (Remark \[2\]) |
-| 21 | U1 | dateValid |  | Date valid flag (Remark \[3\]) |
+| 12 | U2 | ms | ms | UTC milliseconds (0\~999) |
+| 14 | U2 | year | year | UTC Year (1999\~2099) |
+| 16 | U1 | month | month | UTC Month (1\~12) |
+| 17 | U1 | day | day | UTC Day (1\~31) |
+| 18 | U1 | hour | hour | UTC Hour (0\~23) |
+| 19 | U1 | min | min | UTC Minute (0\~59) |
+| 20 | U1 | sec | s | UTC Second (0\~59) |
+| 21 | U1 | valid |  | Time valid flag (Remark \[1\]) |
+| 22 | U1 | timeSrc |  | Timing system flag (Remark \[2\]) |
+| 23 | U1 | dateValid |  | Date valid flag (Remark \[3\]) |
 
 **Remark \[1\]: Time Valid Flag**
 
