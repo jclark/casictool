@@ -632,7 +632,12 @@ def set_nmea_output(
         current = current_rates.rates.get(nmea.name, -1) if current_rates else -1
 
         if target == current:
-            log.debug(f"NMEA {nmea.name} already {'enabled' if target else 'disabled'}")
+            # "already enabled" at info: user explicitly requested this message
+            # "already disabled" at debug: avoid spam when using --nmea-out=none
+            if target:
+                log.info(f"NMEA {nmea.name} already enabled")
+            else:
+                log.debug(f"NMEA {nmea.name} already disabled")
             continue
 
         if not set_nmea_message_rate(conn, nmea.name, target):
@@ -1038,8 +1043,13 @@ def execute_job(
                 target_rate = 1 if msg_name_str in casic_out else 0
 
                 # Skip if already at the desired rate
+                # "already enabled" at info: user explicitly requested this message
+                # "already disabled" at debug: avoid spam when using --casic-out=none
                 if current_rate == target_rate:
-                    log.debug(f"CASIC {msg_name_str} already {'enabled' if target_rate else 'disabled'}")
+                    if target_rate:
+                        log.info(f"CASIC {msg_name_str} already enabled")
+                    else:
+                        log.debug(f"CASIC {msg_name_str} already disabled")
                     continue
 
                 if set_casic_message_rate(conn, msg_cls, msg_id, target_rate):
