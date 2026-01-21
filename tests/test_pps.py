@@ -4,15 +4,18 @@ import struct
 
 import pytest
 
-from casic import CFG_MASK_TP, build_cfg_tp, parse_cfg_tp
+from casic import CFG_MASK_TP, TIME_REF_SAT, TIME_REF_UTC, build_cfg_tp, parse_cfg_tp
 from casictool import GNSS, parse_time_gnss_arg
 from job import ConfigChanges
 
 
 class TestBuildCfgTp:
-    def test_default_values(self) -> None:
-        """Test default 1Hz, 100ms pulse."""
-        payload = build_cfg_tp()
+    def test_typical_pps(self) -> None:
+        """Test typical 1Hz, 100ms pulse."""
+        payload = build_cfg_tp(
+            interval_us=1000000, width_us=100000, enable=1,
+            polarity=0, time_ref=TIME_REF_SAT, time_source=0
+        )
         assert len(payload) == 16
         interval, width, enable = struct.unpack("<IIb", payload[:9])
         assert interval == 1000000  # 1 Hz
@@ -21,67 +24,101 @@ class TestBuildCfgTp:
 
     def test_disable_pps(self) -> None:
         """Test disable sets enable=0."""
-        payload = build_cfg_tp(enable=0)
+        payload = build_cfg_tp(
+            interval_us=1000000, width_us=100000, enable=0,
+            polarity=0, time_ref=TIME_REF_SAT, time_source=0
+        )
         enable = payload[8]
         assert enable == 0
 
     def test_time_source_gps(self) -> None:
         """Test time_source=0 for GPS."""
-        payload = build_cfg_tp(time_source=0)
+        payload = build_cfg_tp(
+            interval_us=1000000, width_us=100000, enable=1,
+            polarity=0, time_ref=TIME_REF_SAT, time_source=0
+        )
         time_source = payload[11]
         assert time_source == 0
 
     def test_time_source_bds(self) -> None:
         """Test time_source=1 for BDS."""
-        payload = build_cfg_tp(time_source=1)
+        payload = build_cfg_tp(
+            interval_us=1000000, width_us=100000, enable=1,
+            polarity=0, time_ref=TIME_REF_SAT, time_source=1
+        )
         time_source = payload[11]
         assert time_source == 1
 
     def test_time_source_glonass(self) -> None:
         """Test time_source=2 for GLONASS."""
-        payload = build_cfg_tp(time_source=2)
+        payload = build_cfg_tp(
+            interval_us=1000000, width_us=100000, enable=1,
+            polarity=0, time_ref=TIME_REF_SAT, time_source=2
+        )
         time_source = payload[11]
         assert time_source == 2
 
     def test_custom_width(self) -> None:
         """Test custom pulse width."""
-        payload = build_cfg_tp(width_us=50000)  # 50ms
+        payload = build_cfg_tp(
+            interval_us=1000000, width_us=50000, enable=1,
+            polarity=0, time_ref=TIME_REF_SAT, time_source=0
+        )
         interval, width = struct.unpack("<II", payload[:8])
         assert width == 50000
 
     def test_custom_interval(self) -> None:
         """Test custom pulse interval."""
-        payload = build_cfg_tp(interval_us=500000)  # 2 Hz
+        payload = build_cfg_tp(
+            interval_us=500000, width_us=100000, enable=1,
+            polarity=0, time_ref=TIME_REF_SAT, time_source=0
+        )
         interval, width = struct.unpack("<II", payload[:8])
         assert interval == 500000
 
     def test_polarity_rising(self) -> None:
-        """Test rising edge polarity (default)."""
-        payload = build_cfg_tp(polarity=0)
+        """Test rising edge polarity."""
+        payload = build_cfg_tp(
+            interval_us=1000000, width_us=100000, enable=1,
+            polarity=0, time_ref=TIME_REF_SAT, time_source=0
+        )
         polarity = payload[9]
         assert polarity == 0
 
     def test_polarity_falling(self) -> None:
         """Test falling edge polarity."""
-        payload = build_cfg_tp(polarity=1)
+        payload = build_cfg_tp(
+            interval_us=1000000, width_us=100000, enable=1,
+            polarity=1, time_ref=TIME_REF_SAT, time_source=0
+        )
         polarity = struct.unpack("<b", payload[9:10])[0]
         assert polarity == 1
 
     def test_time_ref_utc(self) -> None:
-        """Test UTC time reference (default)."""
-        payload = build_cfg_tp(time_ref=0)
+        """Test UTC time reference."""
+        payload = build_cfg_tp(
+            interval_us=1000000, width_us=100000, enable=1,
+            polarity=0, time_ref=TIME_REF_UTC, time_source=0
+        )
         time_ref = payload[10]
         assert time_ref == 0
 
     def test_time_ref_satellite(self) -> None:
         """Test satellite time reference."""
-        payload = build_cfg_tp(time_ref=1)
+        payload = build_cfg_tp(
+            interval_us=1000000, width_us=100000, enable=1,
+            polarity=0, time_ref=TIME_REF_SAT, time_source=0
+        )
         time_ref = struct.unpack("<b", payload[10:11])[0]
         assert time_ref == 1
 
     def test_user_delay(self) -> None:
         """Test user delay field."""
-        payload = build_cfg_tp(user_delay=0.001)  # 1ms delay
+        payload = build_cfg_tp(
+            interval_us=1000000, width_us=100000, enable=1,
+            polarity=0, time_ref=TIME_REF_SAT, time_source=0,
+            user_delay=0.001
+        )
         user_delay = struct.unpack("<f", payload[12:16])[0]
         assert abs(user_delay - 0.001) < 1e-6
 
@@ -92,16 +129,15 @@ class TestBuildCfgTp:
             width_us=100000,
             enable=1,
             polarity=0,
-            time_ref=0,
+            time_ref=TIME_REF_UTC,
             time_source=2,
-            user_delay=0.0,
         )
         parsed = parse_cfg_tp(payload)
         assert parsed.interval_us == 1000000
         assert parsed.width_us == 100000
         assert parsed.enable == 1
         assert parsed.polarity == 0
-        assert parsed.time_ref == 0
+        assert parsed.time_ref == TIME_REF_UTC
         assert parsed.time_source == 2
         assert parsed.user_delay == 0.0
 

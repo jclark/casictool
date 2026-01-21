@@ -10,6 +10,7 @@ import time
 
 import serial
 
+from casic import TIME_REF_SAT, TP_FIX_ONLY
 from connection import CasicConnection
 from job import (
     GNSS,
@@ -399,7 +400,9 @@ def build_job(args: argparse.Namespace) -> tuple[ConfigJob, str | None]:
             except ValueError as e:
                 return ConfigJob(), str(e)
 
-        props["time_pulse"] = TimePulse(period=1.0, width=width, time_gnss=time_gnss)
+        props["time_pulse"] = TimePulse(
+            period=1.0, width=width, time_gnss=time_gnss, time_ref=TIME_REF_SAT, enable=TP_FIX_ONLY
+        )
 
     # Determine save mode
     save = SaveMode.NONE

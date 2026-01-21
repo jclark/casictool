@@ -34,6 +34,7 @@ from casic import (
     RESET_HW_IMMEDIATE,
     START_COLD,
     START_FACTORY,
+    TIME_REF_SAT,
     TP_FIX_ONLY,
     TP_OFF,
     MessageRatesConfig,
@@ -113,7 +114,8 @@ class TimePulse:
     period: float  # pulse period in seconds (1.0 = 1Hz PPS)
     width: float  # pulse width in seconds
     time_gnss: GNSS  # time source for PPS alignment
-    enable: int = TP_FIX_ONLY  # TP_OFF, TP_ON, TP_MAINTAIN, or TP_FIX_ONLY
+    time_ref: int  # TIME_REF_UTC or TIME_REF_SAT
+    enable: int  # TP_OFF, TP_ON, TP_MAINTAIN, or TP_FIX_ONLY
 
 
 @dataclass(frozen=True)
@@ -726,12 +728,13 @@ def set_pps(conn: CasicConnection, width_seconds: float, enable: int = TP_FIX_ON
     return conn.send_and_wait_ack(CFG_TP.cls, CFG_TP.id, payload)
 
 
-def set_time_gnss(conn: CasicConnection, system: str) -> bool:
-    """Set PPS time source constellation using read-modify-write.
+def set_time_gnss(conn: CasicConnection, system: str, time_ref: int) -> bool:
+    """Set PPS time source constellation and time reference.
 
     Args:
         conn: Active CASIC connection
         system: "GPS", "BDS", or "GLO"
+        time_ref: TIME_REF_UTC or TIME_REF_SAT
 
     Returns:
         True if ACK received, False on NAK or timeout
@@ -758,7 +761,7 @@ def set_time_gnss(conn: CasicConnection, system: str) -> bool:
         width_us=current.width_us,
         enable=current.enable,
         polarity=current.polarity,
-        time_ref=current.time_ref,
+        time_ref=time_ref,
         time_source=time_source,
         user_delay=current.user_delay,
     )
@@ -854,6 +857,7 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
             period=tp.interval_us / 1_000_000.0,
             width=0.0 if not tp.enabled else tp.width_us / 1_000_000.0,
             time_gnss=time_source_to_gnss(tp.time_source),
+            time_ref=tp.time_ref,
             enable=tp.enable,
         )
 
@@ -988,9 +992,10 @@ def execute_job(
                 result.success = False
                 result.error = "failed to configure PPS"
                 return result
-            # Set time source
-            if set_time_gnss(conn, tp.time_gnss.value):
-                log.info(f"PPS time source: {tp.time_gnss.value}")
+            # Set time source and time reference
+            if set_time_gnss(conn, tp.time_gnss.value, tp.time_ref):
+                time_gnss_str = tp.time_gnss.value if tp.time_ref == TIME_REF_SAT else f"{tp.time_gnss.value}/UTC"
+                log.info(f"PPS time GNSS: {time_gnss_str}")
                 changes.mark_tp()
             else:
                 result.success = False

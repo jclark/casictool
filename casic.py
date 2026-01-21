@@ -136,6 +136,10 @@ TP_ON = 1  # Pulse output always enabled
 TP_MAINTAIN = 2  # Continue after fix lost
 TP_FIX_ONLY = 3  # Pulse only when fix is valid
 
+# CFG-TP time reference
+TIME_REF_UTC = 0  # PPS aligned to UTC
+TIME_REF_SAT = 1  # PPS aligned to satellite time (GPS/BDS/GLO)
+
 
 def _build_msg_names() -> dict[tuple[int, int], str]:
     """Build message name lookup from MsgID constants."""
@@ -659,6 +663,14 @@ class TimePulseConfig:
         return sources.get(self.time_source, f"Unknown ({self.time_source})")
 
     @property
+    def time_gnss_str(self) -> str:
+        """Format time GNSS for display: 'GPS' (satellite) or 'GPS/UTC' (UTC)."""
+        source = {0: "GPS", 1: "BDS", 2: "GLO"}.get(self.time_source, "?")
+        if self.time_ref == TIME_REF_UTC:
+            return f"{source}/UTC"
+        return source
+
+    @property
     def interval_s(self) -> float:
         return self.interval_us / 1_000_000.0
 
@@ -675,7 +687,8 @@ class TimePulseConfig:
             flags = "; only when locked"
         return (
             f"Time pulse: enabled; width {self.width_ms / 1000:.3g} s; "
-            f"period {self.interval_s:.3g} s; polarity {polarity}{flags}"
+            f"period {self.interval_s:.3g} s; polarity {polarity}{flags}\n"
+            f"Time GNSS: {self.time_gnss_str}"
         )
 
 
@@ -1009,12 +1022,12 @@ def build_cfg_rst(nav_bbr_mask: int, reset_mode: int, start_mode: int) -> bytes:
 
 
 def build_cfg_tp(
-    interval_us: int = 1000000,
-    width_us: int = 100000,
-    enable: int = 1,
-    polarity: int = 0,
-    time_ref: int = 0,
-    time_source: int = 0,
+    interval_us: int,
+    width_us: int,
+    enable: int,
+    polarity: int,
+    time_ref: int,
+    time_source: int,
     user_delay: float = 0.0,
 ) -> bytes:
     """Build CFG-TP payload (16 bytes).

@@ -11,7 +11,17 @@ import logging
 import sys
 from dataclasses import dataclass
 
-from casic import DYN_MODEL_NAMES, DYN_MODEL_PORTABLE, DYN_MODEL_STATIONARY, TP_FIX_ONLY, TP_OFF, TP_ON
+from casic import (
+    DYN_MODEL_NAMES,
+    DYN_MODEL_PORTABLE,
+    DYN_MODEL_STATIONARY,
+    TIME_REF_SAT,
+    TIME_REF_UTC,
+    TP_FIX_ONLY,
+    TP_MAINTAIN,
+    TP_OFF,
+    TP_ON,
+)
 from casictool import LevelFormatter
 from connection import CasicConnection
 from job import (
@@ -116,6 +126,15 @@ def verify_persist(
     return Pass()
 
 
+def format_time_pulse(tp: TimePulse) -> str:
+    """Format TimePulse with symbolic names."""
+    enable_names = {TP_OFF: "TP_OFF", TP_ON: "TP_ON", TP_MAINTAIN: "TP_MAINTAIN", TP_FIX_ONLY: "TP_FIX_ONLY"}
+    time_ref_names = {TIME_REF_UTC: "TIME_REF_UTC", TIME_REF_SAT: "TIME_REF_SAT"}
+    enable_str = enable_names.get(tp.enable, str(tp.enable))
+    time_ref_str = time_ref_names.get(tp.time_ref, str(tp.time_ref))
+    return f"TimePulse(width={tp.width}, time_gnss={tp.time_gnss.value}, time_ref={time_ref_str}, enable={enable_str})"
+
+
 def format_props(props: ConfigProps) -> str:
     """Format ConfigProps for display."""
     parts = []
@@ -130,7 +149,7 @@ def format_props(props: ConfigProps) -> str:
     if "time_mode" in props:
         parts.append(f"time_mode: {props['time_mode']}")
     if "time_pulse" in props:
-        parts.append(f"time_pulse: {props['time_pulse']}")
+        parts.append(f"time_pulse: {format_time_pulse(props['time_pulse'])}")
     if "nmea_out" in props:
         nmea_out = props["nmea_out"]
         # Show only enabled messages
@@ -271,13 +290,13 @@ TIME_MODE_TESTS: list[ConfigProps] = [
 
 PPS_TESTS: list[ConfigProps] = [
     # Disabled PPS (width=0 sets enable=TP_OFF)
-    {"time_pulse": TimePulse(period=1.0, width=0.0, time_gnss=GNSS.GPS, enable=TP_OFF)},
-    # BDS time source with 1ms pulse, enable=ON (always output)
-    {"time_pulse": TimePulse(period=1.0, width=0.001, time_gnss=GNSS.BDS, enable=TP_ON)},
-    # GLONASS time source with 100us pulse, enable=FIX_ONLY (default)
-    {"time_pulse": TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GLO, enable=TP_FIX_ONLY)},
+    {"time_pulse": TimePulse(period=1.0, width=0.0, time_gnss=GNSS.GPS, time_ref=TIME_REF_SAT, enable=TP_OFF)},
+    # BDS time source with 1ms pulse, enable=ON (always output), UTC time ref
+    {"time_pulse": TimePulse(period=1.0, width=0.001, time_gnss=GNSS.BDS, time_ref=TIME_REF_UTC, enable=TP_ON)},
+    # GLONASS time source with 100us pulse, enable=FIX_ONLY
+    {"time_pulse": TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GLO, time_ref=TIME_REF_SAT, enable=TP_FIX_ONLY)},
     # Good state: GPS time source with 0.1s pulse, FIX_ONLY (last test leaves receiver in clean state)
-    {"time_pulse": TimePulse(period=1.0, width=0.1, time_gnss=GNSS.GPS, enable=TP_FIX_ONLY)},
+    {"time_pulse": TimePulse(period=1.0, width=0.1, time_gnss=GNSS.GPS, time_ref=TIME_REF_SAT, enable=TP_FIX_ONLY)},
 ]
 
 CASIC_OUT_TESTS: list[ConfigProps] = [
