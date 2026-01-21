@@ -34,6 +34,8 @@ from casic import (
     RESET_HW_IMMEDIATE,
     START_COLD,
     START_FACTORY,
+    TP_FIX_ONLY,
+    TP_OFF,
     MessageRatesConfig,
     PortConfig,
     ReceiverConfig,
@@ -111,6 +113,7 @@ class TimePulse:
     period: float  # pulse period in seconds (1.0 = 1Hz PPS)
     width: float  # pulse width in seconds
     time_gnss: GNSS  # time source for PPS alignment
+    enable: int = TP_FIX_ONLY  # TP_OFF, TP_ON, TP_MAINTAIN, or TP_FIX_ONLY
 
 
 @dataclass(frozen=True)
@@ -687,12 +690,13 @@ def parse_ecef_coords(coord_str: str) -> tuple[float, float, float]:
 # ============================================================================
 
 
-def set_pps(conn: CasicConnection, width_seconds: float) -> bool:
+def set_pps(conn: CasicConnection, width_seconds: float, enable: int = TP_FIX_ONLY) -> bool:
     """Configure PPS output using read-modify-write.
 
     Args:
         conn: Active CASIC connection
         width_seconds: Pulse width in seconds (0 to disable)
+        enable: Enable mode (TP_OFF, TP_ON, TP_MAINTAIN, TP_FIX_ONLY)
 
     Returns:
         True if ACK received, False on NAK or timeout
@@ -705,10 +709,9 @@ def set_pps(conn: CasicConnection, width_seconds: float) -> bool:
     current = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
 
     if width_seconds == 0:
-        enable = 0
+        enable = TP_OFF
         width_us = current.width_us  # Preserve existing width
     else:
-        enable = 1
         width_us = int(width_seconds * 1_000_000)
 
     payload = build_cfg_tp(
@@ -847,12 +850,12 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
     result = conn.poll(CFG_TP.cls, CFG_TP.id)
     if result.success:
         tp = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
-        if tp.enabled:
-            props["time_pulse"] = TimePulse(
-                period=tp.interval_us / 1_000_000.0,
-                width=tp.width_us / 1_000_000.0,
-                time_gnss=time_source_to_gnss(tp.time_source),
-            )
+        props["time_pulse"] = TimePulse(
+            period=tp.interval_us / 1_000_000.0,
+            width=0.0 if not tp.enabled else tp.width_us / 1_000_000.0,
+            time_gnss=time_source_to_gnss(tp.time_source),
+            enable=tp.enable,
+        )
 
     # Query port config to check if text output is enabled
     port_config = query_port_config(conn)
@@ -974,8 +977,8 @@ def execute_job(
         # Apply time pulse configuration
         if "time_pulse" in job.props:
             tp = job.props["time_pulse"]
-            # Set pulse width
-            if set_pps(conn, tp.width):
+            # Set pulse width and enable mode
+            if set_pps(conn, tp.width, tp.enable):
                 if tp.width == 0:
                     log.info("PPS disabled")
                 else:

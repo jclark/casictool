@@ -130,6 +130,12 @@ NMEA_MESSAGES: list[tuple[str, MsgID]] = [
     ("ZDA", NMEA_ZDA),
 ]
 
+# CFG-TP pulse enable modes
+TP_OFF = 0  # Pulse output disabled
+TP_ON = 1  # Pulse output always enabled
+TP_MAINTAIN = 2  # Continue after fix lost
+TP_FIX_ONLY = 3  # Pulse only when fix is valid
+
 
 def _build_msg_names() -> dict[tuple[int, int], str]:
     """Build message name lookup from MsgID constants."""
@@ -664,9 +670,12 @@ class TimePulseConfig:
         if not self.enabled:
             return "Time pulse: disabled"
         polarity = "falling" if self.polarity else "rising"
+        flags = ""
+        if self.enable == TP_FIX_ONLY:
+            flags = "; only when locked"
         return (
             f"Time pulse: enabled; width {self.width_ms / 1000:.3g} s; "
-            f"period {self.interval_s:.3g} s; polarity {polarity}"
+            f"period {self.interval_s:.3g} s; polarity {polarity}{flags}"
         )
 
 

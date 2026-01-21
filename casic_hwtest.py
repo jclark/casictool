@@ -11,7 +11,7 @@ import logging
 import sys
 from dataclasses import dataclass
 
-from casic import DYN_MODEL_NAMES, DYN_MODEL_PORTABLE, DYN_MODEL_STATIONARY
+from casic import DYN_MODEL_NAMES, DYN_MODEL_PORTABLE, DYN_MODEL_STATIONARY, TP_FIX_ONLY, TP_OFF, TP_ON
 from casictool import LevelFormatter
 from connection import CasicConnection
 from job import (
@@ -270,12 +270,14 @@ TIME_MODE_TESTS: list[ConfigProps] = [
 ]
 
 PPS_TESTS: list[ConfigProps] = [
-    # BDS time source with 1ms pulse
-    {"time_pulse": TimePulse(period=1.0, width=0.001, time_gnss=GNSS.BDS)},
-    # GLONASS time source with 100us pulse
-    {"time_pulse": TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GLO)},
-    # Good state: GPS time source with 0.1s pulse (last test leaves receiver in clean state)
-    {"time_pulse": TimePulse(period=1.0, width=0.1, time_gnss=GNSS.GPS)},
+    # Disabled PPS (width=0 sets enable=TP_OFF)
+    {"time_pulse": TimePulse(period=1.0, width=0.0, time_gnss=GNSS.GPS, enable=TP_OFF)},
+    # BDS time source with 1ms pulse, enable=ON (always output)
+    {"time_pulse": TimePulse(period=1.0, width=0.001, time_gnss=GNSS.BDS, enable=TP_ON)},
+    # GLONASS time source with 100us pulse, enable=FIX_ONLY (default)
+    {"time_pulse": TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GLO, enable=TP_FIX_ONLY)},
+    # Good state: GPS time source with 0.1s pulse, FIX_ONLY (last test leaves receiver in clean state)
+    {"time_pulse": TimePulse(period=1.0, width=0.1, time_gnss=GNSS.GPS, enable=TP_FIX_ONLY)},
 ]
 
 CASIC_OUT_TESTS: list[ConfigProps] = [
