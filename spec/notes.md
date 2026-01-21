@@ -103,3 +103,44 @@ Notes:
 - The chip self-reports as "5N-32" while the module label says "5N-31"
 - info=1 HW= serial field may be all zeros; info=6 IC= has the real serial
 
+## NAV-TIMEUTC tAcc Field
+
+**Spec says:**
+- tAcc: R4, scale 1/c², unit s²
+
+**Interpretation:**
+The scale factor `1/c²` means the raw float value must be divided by the speed of light squared to get the variance in seconds².
+
+c = 299,792,458 m/s
+
+**Worked example:**
+Raw packet payload (hex): `757d9a035359814080e749b50000ea070115002a38070003`
+
+tAcc bytes (offset 4-7): `53598140` → float 4.042 (little-endian)
+
+Actual variance: 4.042 / (299792458)² ≈ 4.5 × 10⁻¹⁷ s²
+
+Time accuracy (1σ): √(4.5 × 10⁻¹⁷) ≈ 6.7 ns
+
+## NAV-SOL Week Number with GLONASS Timing
+
+When `timeSrc=2` (GLONASS) in NAV-SOL, the `week` and `tow` fields use a different epoch than GPS time.
+
+**GPS epoch:** January 6, 1980 (Sunday)
+**GLONASS epoch used by receiver:** December 31, 1995 (Sunday)
+
+The offset is exactly 834 weeks (16 years).
+
+**Worked example:**
+NAV-SOL payload reports: week=1568, tow=262219s, timeSrc=2
+
+Using GLONASS epoch (Dec 31, 1995):
+- 1568 weeks + 262219 seconds = January 21, 2026, 00:50:19 UTC ✓
+
+Using GPS epoch (Jan 6, 1980):
+- 1568 weeks + 262219 seconds = January 27, 2010 ✗
+
+The NMEA RMC sentence from the same capture confirms the correct date: `$GNRMC,005019.000,A,...,210126,...`
+
+**Note:** Native GLONASS time uses a 4-year cycle (the N₄ parameter) with day numbers (Nₜ), not weeks. The receiver converts this internally to a week/TOW format for consistency with GPS-style output. The December 31, 1995 epoch aligns with the start of the GLONASS N₄ four-year interval counter (defined as starting from 1996 in the GLONASS ICD), adjusted to the preceding Sunday since GPS weeks start on Sunday. This is not a native GLONASS representation but is the most reasonable way to express GLONASS time as week number + TOW.
+
