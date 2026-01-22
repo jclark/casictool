@@ -390,18 +390,29 @@ def build_job(args: argparse.Namespace) -> tuple[ConfigJob, str | None]:
         if args.pps is not None and (args.pps < 0 or args.pps > 1.0):
             return ConfigJob(), "PPS width must be between 0 and 1.0 seconds"
 
-        # Default values
-        width = args.pps if args.pps is not None else 0.0001  # 100us default
-        time_gnss = GNSS.GPS  # Default to GPS
+        # Only set fields the user specified
+        if args.pps is None:
+            width = None
+            enable = None
+            time_ref = None
+        else:
+            width = args.pps
+            enable = TP_FIX_ONLY
+            time_ref = TIME_REF_SAT
 
-        if args.time_gnss:
+        if args.time_gnss is None:
+            time_gnss = None
+        else:
             try:
                 time_gnss = parse_time_gnss_arg(args.time_gnss)
             except ValueError as e:
                 return ConfigJob(), str(e)
 
         props["time_pulse"] = TimePulse(
-            period=1.0, width=width, time_gnss=time_gnss, time_ref=TIME_REF_SAT, enable=TP_FIX_ONLY
+            width=width,
+            time_gnss=time_gnss,
+            time_ref=time_ref,
+            enable=enable,
         )
 
     # Determine save mode

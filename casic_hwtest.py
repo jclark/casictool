@@ -68,6 +68,19 @@ TestResult = Pass | Fail
 # ============================================================================
 
 
+def time_pulse_matches(expected: TimePulse, actual: TimePulse) -> bool:
+    """Check if actual matches expected, ignoring None fields in expected."""
+    if expected.width is not None and expected.width != actual.width:
+        return False
+    if expected.time_gnss is not None and expected.time_gnss != actual.time_gnss:
+        return False
+    if expected.time_ref is not None and expected.time_ref != actual.time_ref:
+        return False
+    if expected.enable is not None and expected.enable != actual.enable:
+        return False
+    return True
+
+
 def verify(conn: CasicConnection, props: ConfigProps, tool_log: logging.Logger) -> TestResult:
     """Apply props and verify they took effect."""
     job = ConfigJob(props=props)
@@ -78,8 +91,12 @@ def verify(conn: CasicConnection, props: ConfigProps, tool_log: logging.Logger) 
     mismatches: dict[str, dict[str, object]] = {}
     for key, expected_val in props.items():
         actual_val = actual.get(key)
-        if actual_val != expected_val:
-            mismatches[key] = {"expected": expected_val, "actual": actual_val}
+        if key == "time_pulse":
+            if not time_pulse_matches(expected_val, actual_val):  # type: ignore[arg-type]
+                mismatches[key] = {"expected": expected_val, "actual": actual_val}
+        else:
+            if actual_val != expected_val:
+                mismatches[key] = {"expected": expected_val, "actual": actual_val}
     if mismatches:
         return Fail(mismatches)
     return Pass()
@@ -130,9 +147,10 @@ def format_time_pulse(tp: TimePulse) -> str:
     """Format TimePulse with symbolic names."""
     enable_names = {TP_OFF: "TP_OFF", TP_ON: "TP_ON", TP_MAINTAIN: "TP_MAINTAIN", TP_FIX_ONLY: "TP_FIX_ONLY"}
     time_ref_names = {TIME_REF_UTC: "TIME_REF_UTC", TIME_REF_SAT: "TIME_REF_SAT"}
-    enable_str = enable_names.get(tp.enable, str(tp.enable))
-    time_ref_str = time_ref_names.get(tp.time_ref, str(tp.time_ref))
-    return f"TimePulse(width={tp.width}, time_gnss={tp.time_gnss.value}, time_ref={time_ref_str}, enable={enable_str})"
+    enable_str = enable_names.get(tp.enable, str(tp.enable)) if tp.enable is not None else "None"
+    time_ref_str = time_ref_names.get(tp.time_ref, str(tp.time_ref)) if tp.time_ref is not None else "None"
+    time_gnss_str = tp.time_gnss.value if tp.time_gnss is not None else "None"
+    return f"TimePulse(width={tp.width}, time_gnss={time_gnss_str}, time_ref={time_ref_str}, enable={enable_str})"
 
 
 def format_props(props: ConfigProps) -> str:
@@ -288,15 +306,22 @@ TIME_MODE_TESTS: list[ConfigProps] = [
     {"time_mode": MobileMode(), "dyn_model": DYN_MODEL_PORTABLE},
 ]
 
-PPS_TESTS: list[ConfigProps] = [
+TP_TESTS: list[ConfigProps] = [
     # Disabled PPS (width=0 sets enable=TP_OFF)
-    {"time_pulse": TimePulse(period=1.0, width=0.0, time_gnss=GNSS.GPS, time_ref=TIME_REF_SAT, enable=TP_OFF)},
+    {"time_pulse": TimePulse(width=0.0, time_gnss=GNSS.GPS, time_ref=TIME_REF_SAT, enable=TP_OFF)},
     # BDS time source with 1ms pulse, enable=ON (always output), UTC time ref
-    {"time_pulse": TimePulse(period=1.0, width=0.001, time_gnss=GNSS.BDS, time_ref=TIME_REF_UTC, enable=TP_ON)},
+    {"time_pulse": TimePulse(width=0.001, time_gnss=GNSS.BDS, time_ref=TIME_REF_UTC, enable=TP_ON)},
     # GLONASS time source with 100us pulse, enable=FIX_ONLY
-    {"time_pulse": TimePulse(period=1.0, width=0.0001, time_gnss=GNSS.GLO, time_ref=TIME_REF_SAT, enable=TP_FIX_ONLY)},
-    # Good state: GPS time source with 0.1s pulse, FIX_ONLY (last test leaves receiver in clean state)
-    {"time_pulse": TimePulse(period=1.0, width=0.1, time_gnss=GNSS.GPS, time_ref=TIME_REF_SAT, enable=TP_FIX_ONLY)},
+    {"time_pulse": TimePulse(width=0.0001, time_gnss=GNSS.GLO, time_ref=TIME_REF_SAT, enable=TP_FIX_ONLY)},
+
+    # Partial: change only time_gnss (width 0.0001 should be preserved from previous)
+    {"time_pulse": TimePulse(time_gnss=GNSS.BDS, time_ref=TIME_REF_UTC)},
+
+    # Partial: change only width (BDS/UTC should be preserved from previous)
+    {"time_pulse": TimePulse(width=0.002, enable=TP_FIX_ONLY)},
+
+    # Good state: full spec (last test leaves receiver in clean state)
+    {"time_pulse": TimePulse(width=0.1, time_gnss=GNSS.GPS, time_ref=TIME_REF_SAT, enable=TP_FIX_ONLY)},
 ]
 
 CASIC_OUT_TESTS: list[ConfigProps] = [
@@ -331,7 +356,7 @@ def main() -> int:
     parser.add_argument("--nmea-out", action="store_true", help="Test NMEA output")
     parser.add_argument("--casic-out", action="store_true", help="Test CASIC binary output")
     parser.add_argument("--time-mode", action="store_true", help="Test time modes")
-    parser.add_argument("--pps", action="store_true", help="Test PPS configuration")
+    parser.add_argument("--tp", action="store_true", help="Test time pulse configuration")
     parser.add_argument("--min-elev", action="store_true", help="Test minimum elevation")
     parser.add_argument(
         "--persist",
@@ -384,15 +409,15 @@ def main() -> int:
     run_nmea = args.nmea_out or args.all
     run_casic_out = args.casic_out or args.all
     run_time_mode = getattr(args, "time_mode") or args.all
-    run_pps = args.pps or args.all
+    run_tp = args.tp or args.all
     run_min_elev = args.min_elev or args.all
     run_persist = args.persist
 
     # Check that at least one test group or --persist is specified
-    if not (run_gnss or run_nmea or run_casic_out or run_time_mode or run_pps or run_min_elev or run_persist):
+    if not (run_gnss or run_nmea or run_casic_out or run_time_mode or run_tp or run_min_elev or run_persist):
         parser.error(
             "No test groups specified. "
-            "Use --gnss, --nmea-out, --casic-out, --time-mode, --pps, --min-elev, --persist, or --all"
+            "Use --gnss, --nmea-out, --casic-out, --time-mode, --tp, --min-elev, --persist, or --all"
         )
 
     # Connect to receiver
@@ -421,7 +446,7 @@ def main() -> int:
     try:
         # Run normal (RAM-only) tests if not --persist-only mode
         # NMEA/CASIC output runs first to minimize output before other tests
-        if not run_persist or (run_gnss or run_nmea or run_casic_out or run_time_mode or run_pps or run_min_elev):
+        if not run_persist or (run_gnss or run_nmea or run_casic_out or run_time_mode or run_tp or run_min_elev):
             if run_nmea:
                 results["NMEA"] = run_tests(conn, "NMEA", NMEA_TESTS, test_log, tool_log)
 
@@ -434,8 +459,8 @@ def main() -> int:
             if run_time_mode:
                 results["Time Mode"] = run_tests(conn, "time mode", TIME_MODE_TESTS, test_log, tool_log)
 
-            if run_pps:
-                results["PPS"] = run_tests(conn, "PPS", PPS_TESTS, test_log, tool_log)
+            if run_tp:
+                results["TP"] = run_tests(conn, "time pulse", TP_TESTS, test_log, tool_log)
 
             if run_min_elev:
                 results["Min Elev"] = run_tests(conn, "min elev", MIN_ELEV_TESTS, test_log, tool_log)
@@ -462,8 +487,8 @@ def main() -> int:
                     conn, "time mode", TIME_MODE_TESTS, test_log, tool_log
                 )
 
-            if run_pps:
-                results["PPS Persist"] = run_persist_tests(conn, "PPS", PPS_TESTS, test_log, tool_log)
+            if run_tp:
+                results["TP Persist"] = run_persist_tests(conn, "time pulse", TP_TESTS, test_log, tool_log)
 
             if run_min_elev:
                 results["Min Elev Persist"] = run_persist_tests(

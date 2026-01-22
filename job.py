@@ -35,7 +35,6 @@ from casic import (
     START_COLD,
     START_FACTORY,
     TIME_REF_SAT,
-    TP_FIX_ONLY,
     TP_OFF,
     MessageRatesConfig,
     PortConfig,
@@ -109,13 +108,13 @@ class ResetMode(Enum):
 
 @dataclass(frozen=True)
 class TimePulse:
-    """PPS/time pulse configuration."""
+    """PPS/time pulse configuration. None fields mean 'preserve current'."""
 
-    period: float  # pulse period in seconds (1.0 = 1Hz PPS)
-    width: float  # pulse width in seconds
-    time_gnss: GNSS  # time source for PPS alignment
-    time_ref: int  # TIME_REF_UTC or TIME_REF_SAT
-    enable: int  # TP_OFF, TP_ON, TP_MAINTAIN, or TP_FIX_ONLY
+    width: float | None = None  # pulse width in seconds (0 to disable)
+    time_gnss: GNSS | None = None  # time source constellation
+    time_ref: int | None = None  # TIME_REF_UTC or TIME_REF_SAT
+    enable: int | None = None  # TP_OFF, TP_ON, TP_MAINTAIN, or TP_FIX_ONLY
+    period: float = 1.0  # pulse period (always 1.0 for now)
 
 
 @dataclass(frozen=True)
@@ -697,63 +696,29 @@ def parse_ecef_coords(coord_str: str) -> tuple[float, float, float]:
 # ============================================================================
 
 
-def set_pps(conn: CasicConnection, width_seconds: float, enable: int = TP_FIX_ONLY) -> bool:
-    """Configure PPS output using read-modify-write.
+def set_time_pulse(
+    conn: CasicConnection,
+    *,
+    width_seconds: float | None = None,
+    enable: int | None = None,
+    time_source: int | None = None,
+    time_ref: int | None = None,
+) -> bool:
+    """Configure time pulse using read-modify-write.
+
+    All parameters are optional - only provided values are modified,
+    others are preserved from current config.
 
     Args:
         conn: Active CASIC connection
         width_seconds: Pulse width in seconds (0 to disable)
         enable: Enable mode (TP_OFF, TP_ON, TP_MAINTAIN, TP_FIX_ONLY)
-
-    Returns:
-        True if ACK received, False on NAK or timeout
-    """
-    # Query current config to preserve other settings
-    result = conn.poll(CFG_TP.cls, CFG_TP.id)
-    if not result.success:
-        return False
-
-    current = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
-
-    if width_seconds == 0:
-        enable = TP_OFF
-        width_us = current.width_us  # Preserve existing width
-    else:
-        width_us = int(width_seconds * 1_000_000)
-
-    payload = build_cfg_tp(
-        interval_us=current.interval_us,
-        width_us=width_us,
-        enable=enable,
-        polarity=current.polarity,
-        time_ref=current.time_ref,
-        time_source=current.time_source,
-        user_delay=current.user_delay,
-    )
-    return conn.send_and_wait_ack(CFG_TP.cls, CFG_TP.id, payload)
-
-
-def set_time_gnss(conn: CasicConnection, system: str, time_ref: int) -> bool:
-    """Set PPS time source constellation and time reference.
-
-    Args:
-        conn: Active CASIC connection
-        system: "GPS", "BDS", or "GLO"
+        time_source: 0=GPS, 1=BDS, 2=GLO
         time_ref: TIME_REF_UTC or TIME_REF_SAT
 
     Returns:
         True if ACK received, False on NAK or timeout
     """
-    time_source_map = {
-        "GPS": 0,
-        "BDS": 1,
-        "GLO": 2,
-    }
-
-    time_source = time_source_map.get(system.upper())
-    if time_source is None:
-        return False
-
     # Query current config
     result = conn.poll(CFG_TP.cls, CFG_TP.id)
     if not result.success:
@@ -761,13 +726,24 @@ def set_time_gnss(conn: CasicConnection, system: str, time_ref: int) -> bool:
 
     current = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
 
+    # Compute new values, preserving current where not specified
+    new_enable = enable if enable is not None else current.enable
+    if width_seconds is not None:
+        if width_seconds == 0:
+            new_enable = TP_OFF
+            new_width_us = current.width_us  # preserve
+        else:
+            new_width_us = int(width_seconds * 1_000_000)
+    else:
+        new_width_us = current.width_us
+
     payload = build_cfg_tp(
         interval_us=current.interval_us,
-        width_us=current.width_us,
-        enable=current.enable,
+        width_us=new_width_us,
+        enable=new_enable,
         polarity=current.polarity,
-        time_ref=time_ref,
-        time_source=time_source,
+        time_ref=time_ref if time_ref is not None else current.time_ref,
+        time_source=time_source if time_source is not None else current.time_source,
         user_delay=current.user_delay,
     )
     return conn.send_and_wait_ack(CFG_TP.cls, CFG_TP.id, payload)
@@ -859,11 +835,11 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
     if result.success:
         tp = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
         props["time_pulse"] = TimePulse(
-            period=tp.interval_us / 1_000_000.0,
             width=0.0 if not tp.enabled else tp.width_us / 1_000_000.0,
             time_gnss=time_source_to_gnss(tp.time_source),
             time_ref=tp.time_ref,
             enable=tp.enable,
+            period=tp.interval_us / 1_000_000.0,
         )
 
     # Query port config to check if text output is enabled
@@ -986,25 +962,28 @@ def execute_job(
         # Apply time pulse configuration
         if "time_pulse" in job.props:
             tp = job.props["time_pulse"]
-            # Set pulse width and enable mode
-            if set_pps(conn, tp.width, tp.enable):
-                if tp.width == 0:
-                    log.info("PPS disabled")
-                else:
-                    log.info(f"PPS: {tp.width}s width")
+            time_source_map = {"GPS": 0, "BDS": 1, "GLO": 2}
+            time_source = time_source_map[tp.time_gnss.value] if tp.time_gnss else None
+
+            if set_time_pulse(
+                conn,
+                width_seconds=tp.width,
+                enable=tp.enable,
+                time_source=time_source,
+                time_ref=tp.time_ref,
+            ):
+                if tp.width is not None:
+                    if tp.width == 0:
+                        log.info("PPS disabled")
+                    else:
+                        log.info(f"PPS: {tp.width}s width")
+                if tp.time_gnss is not None:
+                    time_gnss_str = tp.time_gnss.value if tp.time_ref == TIME_REF_SAT else f"{tp.time_gnss.value}/UTC"
+                    log.info(f"PPS time GNSS: {time_gnss_str}")
                 changes.mark_tp()
             else:
                 result.success = False
-                result.error = "failed to configure PPS"
-                return result
-            # Set time source and time reference
-            if set_time_gnss(conn, tp.time_gnss.value, tp.time_ref):
-                time_gnss_str = tp.time_gnss.value if tp.time_ref == TIME_REF_SAT else f"{tp.time_gnss.value}/UTC"
-                log.info(f"PPS time GNSS: {time_gnss_str}")
-                changes.mark_tp()
-            else:
-                result.success = False
-                result.error = "failed to set PPS time source"
+                result.error = "failed to configure time pulse"
                 return result
 
         # Apply NMEA output configuration
