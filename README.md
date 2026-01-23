@@ -19,7 +19,7 @@ If the speed is 9600 baud, then NMEA GSV sentences can use up most of the bandwi
 If you are using tinyGTC, then I strongly recommend staying away from the options that affect non-volatile memory.
 If you get the GPS into a state where it doesn't work, you can open the case (remove the four screws on the back), and detach the battery for a few seconds.
 
-casictool can check that the receiver properly acknowledges the configuration message, and with `--show-config` you can check that the configured parameter was correctly stored, but there is no guarantee that the GPS receiver will actually use of the configured parameter. For example, ATGM332D-5N31 and ATGM-336H-5N31 do not appear to make use of the parameter set by `--min-elev`.
+casictool can check that the receiver properly acknowledges the configuration message, and with `--show-config` you can check that the configured parameter was correctly stored, but there is no guarantee that the GPS receiver will actually use the configured parameter. For example, ATGM332D-5N31 and ATGM-336H-5N31 do not appear to make use of the parameter set by `--min-elev`.
 
 ## Installation
 
