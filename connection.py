@@ -197,7 +197,13 @@ class CasicConnection:
             self._log_valid_packet_seen("CASIC")
             if self._log:
                 name = msg_name(event.msg_id.cls, event.msg_id.id)
-                self._log.debug(f"RX {name} ({len(event.payload)} payload bytes)")
+                # For ACK/NAK, show what message was acked/naked
+                if event.msg_id in (ACK_ACK, ACK_NAK) and len(event.payload) >= 2:
+                    target_cls, target_id = event.payload[0], event.payload[1]
+                    target_name = msg_name(target_cls, target_id)
+                    self._log.debug(f"RX {name} for {target_name}")
+                else:
+                    self._log.debug(f"RX {name} ({len(event.payload)} payload bytes)")
 
     def receive_packet(self, timeout: float | None = None) -> StreamEvent | None:
         """Receive next packet of any type (CASIC, NMEA, or Unknown).
