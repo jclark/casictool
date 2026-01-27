@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import TypedDict
+from typing import TypedDict, Union
 
 from casic import (
     ACK_ACK,
@@ -141,7 +141,7 @@ class FixedMode:
 
 
 # Union of time modes (use isinstance() or match/case to check which)
-TimeMode = MobileMode | SurveyMode | FixedMode
+TimeMode = Union[MobileMode, SurveyMode, FixedMode]
 
 # NMEA output rates: list indexed by NMEA.value (0 = disabled, 1 = every fix)
 NMEARates = list[int]  # Always length len(NMEA)

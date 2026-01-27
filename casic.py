@@ -6,6 +6,7 @@ import math
 import struct
 from collections import deque
 from dataclasses import dataclass
+from typing import Union
 
 # Sync bytes
 SYNC1 = 0xBA
@@ -345,7 +346,7 @@ class UnknownBytes:
     timestamp: float
 
 
-StreamEvent = CasicPacket | NmeaSentence | UnknownBytes
+StreamEvent = Union[CasicPacket, NmeaSentence, UnknownBytes]
 
 
 class CasicStreamParser:
