@@ -18,12 +18,6 @@ make check        # Run all checks (lint + typecheck + test)
 
 The virtual environment is in `.venv/`. Use `.venv/bin/python` or `.venv/bin/pip` directly when needed.
 
-## Testing Hardware
-
-A GPS receiver is available for testing:
-- Device: `/dev/ttyUSB0`
-- Baud rate: 9600
-
 ## Documentation
 
 - `spec/casic1.md` - NMEA text protocol (standard sentences + PCAS custom commands)
