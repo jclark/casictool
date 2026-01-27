@@ -23,6 +23,13 @@ CLS_MON = 0x0A
 CLS_AID = 0x0B
 CLS_NMEA = 0x4E
 
+# ZKW F8 message classes (newer protocol)
+CLS_NAV2 = 0x11
+CLS_TIM2 = 0x12
+CLS_RXM2 = 0x13
+CLS_INS2 = 0x14
+CLS_RTCM = 0x15
+
 # Class number to name prefix
 CLS_NAMES: dict[int, str] = {
     CLS_NAV: "NAV",
@@ -34,6 +41,11 @@ CLS_NAMES: dict[int, str] = {
     CLS_MON: "MON",
     CLS_AID: "AID",
     CLS_NMEA: "NMEA",
+    CLS_NAV2: "NAV2",
+    CLS_TIM2: "TIM2",
+    CLS_RXM2: "RXM2",
+    CLS_INS2: "INS2",
+    CLS_RTCM: "RTCM",
 }
 
 
@@ -75,6 +87,22 @@ CFG_NAVX = MsgID(CLS_CFG, 0x07)
 CFG_GROUP = MsgID(CLS_CFG, 0x08)
 CFG_INS = MsgID(CLS_CFG, 0x10)
 
+# CFG messages (ZKW F8 additions)
+CFG_NAVLIMIT = MsgID(CLS_CFG, 0x0A)    # 8 bytes - Satellite filtering
+CFG_NAVMODE = MsgID(CLS_CFG, 0x0B)     # 16 bytes - Navigation mode
+CFG_NAVFLT = MsgID(CLS_CFG, 0x0C)      # 20 bytes - Navigation thresholds
+CFG_WNREF = MsgID(CLS_CFG, 0x0D)       # 4 bytes - GPS week reference
+CFG_INS2 = MsgID(CLS_CFG, 0x0E)        # 4 bytes - INS config (note: different from CFG_INS)
+CFG_NAVBAND = MsgID(CLS_CFG, 0x0F)     # 12 bytes - GNSS/signal selection
+CFG_JSM = MsgID(CLS_CFG, 0x10)         # 4 bytes - Anti-jam/spoof mode
+CFG_CWI = MsgID(CLS_CFG, 0x11)         # 4 bytes - Anti-jam params
+CFG_NMEA = MsgID(CLS_CFG, 0x12)        # 8 bytes - NMEA output config
+CFG_RTCM = MsgID(CLS_CFG, 0x14)        # 16 bytes - RTCM output config
+CFG_TMODE2 = MsgID(CLS_CFG, 0x16)      # 28 bytes - Timing mode (replaces CFG_TMODE)
+CFG_SATMASK = MsgID(CLS_CFG, 0x21)     # 56 bytes - Satellite enable masks
+CFG_TGDU = MsgID(CLS_CFG, 0x22)        # 48 bytes - Hardware delay (TGD)
+CFG_SBAS = MsgID(CLS_CFG, 0x23)        # 16 bytes - SBAS config
+
 # NAV messages
 NAV_STATUS = MsgID(CLS_NAV, 0x00)
 NAV_DOP = MsgID(CLS_NAV, 0x01)
@@ -87,13 +115,43 @@ NAV_GPSINFO = MsgID(CLS_NAV, 0x20)
 NAV_BDSINFO = MsgID(CLS_NAV, 0x21)
 NAV_GLNINFO = MsgID(CLS_NAV, 0x22)
 
+# NAV2 messages (ZKW F8 - class 0x11)
+NAV2_STATUS = MsgID(CLS_NAV2, 0x00)    # 48 bytes - Receiver status
+NAV2_DOP = MsgID(CLS_NAV2, 0x01)       # 24 bytes - Dilution of precision
+NAV2_SOL = MsgID(CLS_NAV2, 0x02)       # 72 bytes - ECEF position/velocity
+NAV2_PVH = MsgID(CLS_NAV2, 0x03)       # 88 bytes - LLA position, ENU velocity
+NAV2_SAT = MsgID(CLS_NAV2, 0x04)       # 12+12*N bytes - Satellite info
+NAV2_TIMEUTC = MsgID(CLS_NAV2, 0x05)   # 20 bytes - UTC time
+NAV2_SIG = MsgID(CLS_NAV2, 0x06)       # 8+16*N bytes - Signal info
+NAV2_CLK = MsgID(CLS_NAV2, 0x07)       # 20 bytes - Clock bias/drift
+NAV2_RVT = MsgID(CLS_NAV2, 0x08)       # 52 bytes - Raw receiver time
+NAV2_RTC = MsgID(CLS_NAV2, 0x09)       # 32 bytes - RTC time info
+
 # TIM messages
 TIM_TP = MsgID(CLS_TIM, 0x00)
+
+# TIM2 messages (ZKW F8 - class 0x12)
+TIM2_TPX = MsgID(CLS_TIM2, 0x00)       # 24 bytes - Timing pulse info
+TIM2_TIMEGPS = MsgID(CLS_TIM2, 0x01)   # 36 bytes - GPS time
+TIM2_TIMEBDS = MsgID(CLS_TIM2, 0x02)   # 36 bytes - BDS time
+TIM2_TIMEGLN = MsgID(CLS_TIM2, 0x03)   # 36 bytes - GLONASS time
+TIM2_TIMEGAL = MsgID(CLS_TIM2, 0x04)   # 36 bytes - Galileo time
+TIM2_TIMEIRN = MsgID(CLS_TIM2, 0x05)   # 36 bytes - IRNSS time
+TIM2_TIMEPOS = MsgID(CLS_TIM2, 0x06)   # 64 bytes - Timing position status
+TIM2_LS = MsgID(CLS_TIM2, 0x07)        # 16 bytes - Leap second alarm
+TIM2_LY = MsgID(CLS_TIM2, 0x08)        # 16 bytes - Leap year alarm
+TIM2_TCXO = MsgID(CLS_TIM2, 0x09)      # 20 bytes - TCXO freq offset
 
 # RXM messages
 RXM_SENSOR = MsgID(CLS_RXM, 0x07)
 RXM_MEASX = MsgID(CLS_RXM, 0x10)
 RXM_SVPOS = MsgID(CLS_RXM, 0x11)
+
+# RXM2 messages (ZKW F8 - class 0x13)
+RXM2_MEASX = MsgID(CLS_RXM2, 0x00)     # 16+32*N bytes - Raw measurements
+RXM2_SVPOS = MsgID(CLS_RXM2, 0x01)     # 16+56*N bytes - All satellite positions
+RXM2_SFRBX = MsgID(CLS_RXM2, 0x06)     # 8+4*N bytes - Raw nav message
+RXM2_SVP = MsgID(CLS_RXM2, 0x0A)       # 60 bytes - Single satellite position
 
 # MSG messages (satellite navigation data)
 MSG_BDSUTC = MsgID(CLS_MSG, 0x00)
@@ -110,6 +168,16 @@ AID_HUI = MsgID(CLS_AID, 0x03)
 
 # MON messages (MON_VER already defined above)
 MON_HW = MsgID(CLS_MON, 0x09)
+
+# MON messages (ZKW F8)
+MON_CWI = MsgID(CLS_MON, 0x00)         # 4+8*N bytes - Interference info
+MON_RFE = MsgID(CLS_MON, 0x01)         # 40 bytes - RF gain
+MON_HIST = MsgID(CLS_MON, 0x02)        # 1028 bytes - IF histogram
+MON_CPU = MsgID(CLS_MON, 0x05)         # 16 bytes - CPU info
+MON_ICV = MsgID(CLS_MON, 0x06)         # 64 bytes - Chip version
+MON_MOD = MsgID(CLS_MON, 0x07)         # 64 bytes - Module version
+MON_JSM = MsgID(CLS_MON, 0x0A)         # 8+4*N bytes - Anti-jam info
+MON_SEC = MsgID(CLS_MON, 0x0B)         # 4 bytes - Security status
 
 # NMEA message IDs (Class 0x4E)
 NMEA_GGA = MsgID(CLS_NMEA, 0x00)
