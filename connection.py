@@ -85,11 +85,17 @@ class CasicConnection:
         self._log = log
         self._parser = CasicStreamParser()
         self._seen_packet_types: set[str] = set()
+        self._seen_messages: dict[str, set[str]] = {"NMEA": set(), "CASIC": set()}
 
     @property
     def seen_casic_packet(self) -> bool:
         """True if we've received at least one valid CASIC packet."""
         return "CASIC" in self._seen_packet_types
+
+    @property
+    def seen_messages(self) -> dict[str, set[str]]:
+        """Return dict of seen message types by category (NMEA, CASIC)."""
+        return self._seen_messages
 
     def close(self) -> None:
         if self._packet_log:
@@ -185,6 +191,13 @@ class CasicConnection:
                 return
             self._log_nmea_packet(sentence, event.timestamp)
             self._log_valid_packet_seen("NMEA")
+            # Extract base message type (strip talker ID, e.g., "GNGGA" -> "GGA")
+            if sentence:
+                msg_type = sentence[1:].split(",", 1)[0]
+                # Standard NMEA talker IDs are 2 chars, message type is 3 chars
+                if len(msg_type) >= 3:
+                    base_type = msg_type[-3:]  # e.g., "GNGGA" -> "GGA"
+                    self._seen_messages["NMEA"].add(base_type)
             if self._log:
                 msg_type = sentence[1:].split(",", 1)[0] if sentence else "?"
                 self._log.debug(f"RX NMEA {msg_type}")
@@ -195,8 +208,11 @@ class CasicConnection:
         elif isinstance(event, CasicPacket):
             self._log_casic_packet(event.raw, event.timestamp, out=False)
             self._log_valid_packet_seen("CASIC")
+            name = msg_name(event.msg_id.cls, event.msg_id.id)
+            # Track seen CASIC messages (exclude ACK/NAK which are protocol-level)
+            if event.msg_id not in (ACK_ACK, ACK_NAK):
+                self._seen_messages["CASIC"].add(name)
             if self._log:
-                name = msg_name(event.msg_id.cls, event.msg_id.id)
                 # For ACK/NAK, show what message was acked/naked
                 if event.msg_id in (ACK_ACK, ACK_NAK) and len(event.payload) >= 2:
                     target_cls, target_id = event.payload[0], event.payload[1]

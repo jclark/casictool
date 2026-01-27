@@ -24,21 +24,19 @@ from casic import (
     CFG_RST,
     CFG_TMODE,
     CFG_TP,
-    CLS_NMEA,
     DYN_MODEL_PORTABLE,
     DYN_MODEL_STATIONARY,
     MON_VER,
     MSG_IDS,
-    MSG_NAMES,
     NMEA_MESSAGES,
     RESET_HW_IMMEDIATE,
     START_COLD,
     START_FACTORY,
     TIME_REF_SAT,
     TP_OFF,
-    MessageRatesConfig,
     PortConfig,
     ReceiverConfig,
+    SeenMessagesConfig,
     VersionInfo,
     build_cfg_cfg,
     build_cfg_msg_set,
@@ -47,8 +45,6 @@ from casic import (
     build_cfg_rst,
     build_cfg_tmode,
     build_cfg_tp,
-    msg_name,
-    parse_cfg_msg,
     parse_cfg_navx,
     parse_cfg_prt,
     parse_cfg_rate,
@@ -172,7 +168,7 @@ class ConfigProps(TypedDict, total=False):
     time_mode: TimeMode  # mobile, survey, or fixed position mode
     time_pulse: TimePulse  # PPS configuration
     nmea_out: NMEARates  # NMEA message output rates
-    casic_out: set[str]  # CASIC binary message names to enable
+    casic_out: dict[str, bool]  # CASIC message name -> enable (True) or disable (False)
 
 
 # ============================================================================
@@ -289,65 +285,6 @@ def query_port_config(conn: CasicConnection) -> PortConfig | None:
     return None
 
 
-def query_nmea_rates(
-    conn: CasicConnection, log: logging.Logger | None = None
-) -> MessageRatesConfig | None:
-    """Query NMEA message output rates via CFG-MSG.
-
-    CFG-MSG query with empty payload returns all configured message rates.
-    Each response is 4 bytes: cls, id, rate (U2).
-    """
-    # Build lookup from (cls, id) -> name for NMEA messages we care about
-    nmea_lookup = {(msg.cls, msg.id): name for name, msg in NMEA_MESSAGES}
-
-    rates: dict[str, int] = {}
-    binary_rates: dict[str, int] = {}
-    conn.send(CFG_MSG.cls, CFG_MSG.id, b"")
-
-    # Collect all CFG-MSG responses (two-tier timeouts)
-    # Wait for responses - use long timeout until we get a real CFG-MSG response
-    got_response = False
-    while True:
-        timeout = SUBSEQUENT_TIMEOUT if got_response else INITIAL_TIMEOUT
-        result = conn.receive(timeout=timeout)
-        if result is None:
-            break
-        recv_id, recv_payload = result
-        # Check for ACK/NAK - if it's for our query, keep waiting
-        if recv_id == ACK_ACK or recv_id == ACK_NAK:
-            if len(recv_payload) >= 2 and recv_payload[0] == CFG_MSG.cls and recv_payload[1] == CFG_MSG.id:
-                if recv_id == ACK_NAK:
-                    break  # NAK means query not supported
-                continue  # ACK means keep waiting for actual response
-        # Check for actual CFG-MSG response
-        if recv_id.cls == CFG_MSG.cls and recv_id.id == CFG_MSG.id and len(recv_payload) >= 4:
-            msg_cls, msg_id, rate = recv_payload[0], recv_payload[1], parse_cfg_msg(recv_payload)
-            if msg_cls == CLS_NMEA:
-                # NMEA message - track rate
-                name = nmea_lookup.get((msg_cls, msg_id))
-                if name:
-                    rates[name] = rate
-                    if log:
-                        log.debug(f"CFG-MSG {name}: rate={rate}")
-            else:
-                # Binary CASIC message - track rate
-                known_name = MSG_NAMES.get((msg_cls, msg_id))
-                if known_name:
-                    binary_rates[known_name] = rate
-                if log:
-                    log.debug(f"CFG-MSG {msg_name(msg_cls, msg_id)}: rate={rate}")
-            got_response = True
-
-    if not rates and not binary_rates:
-        if log:
-            log.warning("no response to NMEA message rate configuration (CFG-MSG) query")
-        return None
-
-    if log:
-        log.info("got NMEA message rate configuration")
-    return MessageRatesConfig(rates=rates, binary_rates=binary_rates or None)
-
-
 def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> ReceiverConfig:
     """Query all CFG messages and return receiver configuration."""
     config = ReceiverConfig()
@@ -431,8 +368,12 @@ def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> Re
     elif log:
         log.warning("no response to serial port configuration (CFG-PRT) query")
 
-    # Query NMEA message rates via CFG-MSG
-    config.message_rates = query_nmea_rates(conn, log)
+    # Record seen messages from the connection
+    seen = conn.seen_messages
+    config.seen_messages = SeenMessagesConfig(
+        nmea=set(seen["NMEA"]),
+        casic=set(seen["CASIC"]),
+    )
 
     return config
 
@@ -622,23 +563,9 @@ def set_nmea_output(
         log.info("NMEA output enabled")
         changes.mark_prt()
 
-    # Query current rates and only change what's needed
-    current_rates = query_nmea_rates(conn, log)
-
-    # Configure individual messages (GSV first - most traffic)
+    # Configure all NMEA messages from fixed list (GSV first - most traffic)
     for nmea in [NMEA.GSV] + [n for n in NMEA if n != NMEA.GSV]:
         target = nmea_out[nmea.value]
-        current = current_rates.rates.get(nmea.name, -1) if current_rates else -1
-
-        if target == current:
-            # "already enabled" at info: user explicitly requested this message
-            # "already disabled" at debug: avoid spam when using --nmea-out=none
-            if target:
-                log.info(f"NMEA {nmea.name} already enabled")
-            else:
-                log.debug(f"NMEA {nmea.name} already disabled")
-            continue
-
         if not set_nmea_message_rate(conn, nmea.name, target):
             return False, f"failed to {'enable' if target else 'disable'} NMEA {nmea.name}"
         log.info(f"NMEA {nmea.name} {'enabled' if target else 'disabled'}")
@@ -842,35 +769,9 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
             period=tp.interval_us / 1_000_000.0,
         )
 
-    # Query port config to check if text output is enabled
-    port_config = query_port_config(conn)
-
-    # Query NMEA message rates - but if text output is disabled at port level,
-    # effective NMEA output is all zeros regardless of individual message rates
-    if port_config is not None and not port_config.text_output:
-        # Text output disabled at port level - all NMEA effectively off
-        props["nmea_out"] = [0] * len(NMEA)
-        # Still need to query for CASIC binary rates
-        rates = query_nmea_rates(conn)
-    else:
-        # Text output enabled (or port query failed) - check individual rates
-        rates = query_nmea_rates(conn)
-        if rates is not None and rates.rates:
-            nmea_out: NMEARates = [0] * len(NMEA)
-            for name, rate in rates.rates.items():
-                try:
-                    nmea_out[NMEA[name].value] = rate
-                except KeyError:
-                    pass  # Skip unknown NMEA types
-            props["nmea_out"] = nmea_out
-
-    # Query CASIC binary message rates (always, independent of text output)
-    if rates is not None and rates.binary_rates is not None:
-        casic_out: set[str] = set()
-        for name, rate in rates.binary_rates.items():
-            if rate > 0:
-                casic_out.add(name)
-        props["casic_out"] = casic_out
+    # Note: nmea_out and casic_out are not queried because CFG-MSG polling
+    # doesn't work universally across receivers. Message configuration
+    # is set unconditionally without checking current state.
 
     return props
 
@@ -1005,41 +906,24 @@ def execute_job(
 
         # Apply CASIC binary output configuration
         if "casic_out" in job.props:
-            casic_out = job.props["casic_out"]
-            # Query current rates to get list of known CASIC messages
-            current_rates = query_nmea_rates(conn, log)
-            if current_rates is None or current_rates.binary_rates is None:
-                result.success = False
-                result.error = "failed to query current CASIC message configuration"
-                return result
+            casic_out = job.props["casic_out"]  # dict[str, bool]
 
-            # For each known binary message, enable or disable as needed
-            for msg_name_str, current_rate in current_rates.binary_rates.items():
+            # Enable/disable only the explicitly listed messages
+            for msg_name_str, enable in casic_out.items():
                 msg_key = MSG_IDS.get(msg_name_str)
                 if msg_key is None:
-                    continue  # Skip unknown messages
+                    result.success = False
+                    result.error = f"unknown CASIC message: {msg_name_str}"
+                    return result
                 msg_cls, msg_id = msg_key
-                target_rate = 1 if msg_name_str in casic_out else 0
-
-                # Skip if already at the desired rate
-                # "already enabled" at info: user explicitly requested this message
-                # "already disabled" at debug: avoid spam when using --casic-out=none
-                if current_rate == target_rate:
-                    if target_rate:
-                        log.info(f"CASIC {msg_name_str} already enabled")
-                    else:
-                        log.debug(f"CASIC {msg_name_str} already disabled")
-                    continue
+                target_rate = 1 if enable else 0
 
                 if set_casic_message_rate(conn, msg_cls, msg_id, target_rate):
-                    if target_rate > 0:
-                        log.info(f"CASIC {msg_name_str} enabled")
-                    else:
-                        log.info(f"CASIC {msg_name_str} disabled")
+                    log.info(f"CASIC {msg_name_str} {'enabled' if enable else 'disabled'}")
                     changes.mark_msg()
                 else:
                     result.success = False
-                    result.error = f"failed to {'enable' if target_rate > 0 else 'disable'} CASIC {msg_name_str}"
+                    result.error = f"failed to {'enable' if enable else 'disable'} CASIC {msg_name_str}"
                     return result
 
     # Execute NVM save operations (after configuration changes)

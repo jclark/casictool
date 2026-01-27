@@ -671,22 +671,18 @@ class RateConfig:
 
 
 @dataclass
-class MessageRatesConfig:
-    """CFG-MSG responses: NMEA and binary message output rates."""
+class SeenMessagesConfig:
+    """Tracked NMEA and binary message types observed during session."""
 
-    rates: dict[str, int]  # NMEA message name -> rate (0=off, 1=every fix, N=every N fixes)
-    binary_rates: dict[str, int] | None = None  # CASIC binary message name -> rate
+    nmea: set[str]  # NMEA message types seen (e.g., "GGA", "RMC")
+    casic: set[str]  # CASIC binary message types seen (e.g., "NAV-SOL", "TIM-TP")
 
     def format(self) -> str:
         lines = []
-        nmea_enabled = [name for name, rate in self.rates.items() if rate > 0]
-        lines.append(f"NMEA messages enabled: {', '.join(nmea_enabled) if nmea_enabled else 'none'}")
-
-        if self.binary_rates:
-            casic_enabled = [name for name, rate in self.binary_rates.items() if rate > 0]
-            lines.append(f"CASIC messages enabled: {', '.join(casic_enabled) if casic_enabled else 'none'}")
-        else:
-            lines.append("CASIC messages enabled: none")
+        nmea_sorted = sorted(self.nmea)
+        lines.append(f"NMEA messages seen: {', '.join(nmea_sorted) if nmea_sorted else 'none'}")
+        casic_sorted = sorted(self.casic)
+        lines.append(f"CASIC messages seen: {', '.join(casic_sorted) if casic_sorted else 'none'}")
         return "\n".join(lines)
 
 
@@ -858,7 +854,7 @@ class ReceiverConfig:
 
     ports: list[PortConfig] | None = None
     rate: RateConfig | None = None
-    message_rates: MessageRatesConfig | None = None
+    seen_messages: SeenMessagesConfig | None = None
     time_pulse: TimePulseConfig | None = None
     time_mode: TimeModeConfig | None = None
     nav_engine: NavEngineConfig | None = None
@@ -873,8 +869,8 @@ class ReceiverConfig:
             sections.append(self.time_mode.format())
         if self.rate is not None:
             sections.append(self.rate.format())
-        if self.message_rates is not None:
-            sections.append(self.message_rates.format())
+        if self.seen_messages is not None:
+            sections.append(self.seen_messages.format())
         if self.ports:
             for port in self.ports:
                 sections.append(port.format())

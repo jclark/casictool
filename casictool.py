@@ -127,8 +127,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--casic-out",
         type=str,
         metavar="MSGS",
-        help="Set CASIC binary message output. Comma-separated list of messages to enable "
-        "(e.g., TIM-TP,NAV-SOL). Use 'none' to disable all. Messages not listed will be disabled.",
+        help="Configure CASIC binary messages. Comma-separated list with optional - prefix: "
+        "TIM-TP enables, -NAV-SOL disables. Only listed messages are affected.",
     )
 
     # GNSS constellation group
@@ -287,32 +287,42 @@ def parse_nmea_out(nmea_str: str) -> list[int]:
     return result
 
 
-def parse_casic_out(casic_str: str) -> set[str]:
-    """Parse --casic-out argument into set of message names.
+def parse_casic_out(casic_str: str) -> dict[str, bool]:
+    """Parse --casic-out argument into dict of message names to enable/disable.
 
     Args:
-        casic_str: Comma-separated message list (e.g., "TIM-TP,NAV-SOL") or "none"
+        casic_str: Comma-separated message list with optional - prefix for disable
+                   (e.g., "TIM-TP,-NAV-SOL" enables TIM-TP, disables NAV-SOL)
 
     Returns:
-        Set of uppercase message names (empty set for "none")
+        Dict mapping uppercase message name -> True (enable) or False (disable)
 
     Raises:
         ValueError: If unknown message name specified
     """
     from casic import MSG_IDS
 
-    if casic_str.strip().lower() == "none":
-        return set()
-
-    result: set[str] = set()
+    result: dict[str, bool] = {}
 
     for item in casic_str.split(","):
-        item = item.strip().upper().replace("_", "-")
+        item = item.strip()
+        if not item:
+            continue
+
+        # Check for disable prefix (handle both "-MSG" and "- MSG")
+        if item.startswith("-"):
+            enable = False
+            item = item[1:].strip()  # Remove prefix and any whitespace
+        else:
+            enable = True
+
+        # Normalize name
+        item = item.upper().replace("_", "-")
         if not item:
             continue
         if item not in MSG_IDS:
             raise ValueError(f"unknown CASIC message: {item}")
-        result.add(item)
+        result[item] = enable
 
     return result
 

@@ -149,9 +149,11 @@ Enable ZDA (Time and Date) messages
 
 **--casic-out** *messages*  
 Configure CASIC binary message output. The *messages* parameter is a
-comma-separated list of message names (e.g., **TIM-TP,NAV-SOL**).
-Messages not in the list will be disabled. Message names are
-case-insensitive. Use **none** to disable all CASIC binary messages.
+comma-separated list of message names with optional minus prefix. A
+message name without prefix (e.g., **TIM-TP**) enables that message. A
+message name with a minus prefix (e.g., **-NAV-SOL**) disables that
+message. Only the explicitly listed messages are affected; other
+messages retain their current state. Message names are case-insensitive.
 
 **--survey**  
 Perform a survey to determine the position of the antenna, and then run
@@ -202,6 +204,10 @@ Enable only NMEA RMC messages:
 Enable TIM-TP binary message output:
 
     casictool -d /dev/ttyUSB0 -s 38400 --casic-out TIM-TP
+
+Enable TIM-TP and disable NAV-SOL binary messages:
+
+    casictool -d /dev/ttyUSB0 -s 38400 --casic-out TIM-TP,-NAV-SOL
 
 Capture packets for 10 seconds to verify configuration:
 

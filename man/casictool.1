@@ -185,10 +185,14 @@ Enable ZDA (Time and Date) messages
 \f[B]\-\-casic\-out\f[R] \f[I]messages\f[R]
 Configure CASIC binary message output.
 The \f[I]messages\f[R] parameter is a comma\-separated list of message
-names (e.g., \f[B]TIM\-TP,NAV\-SOL\f[R]).
-Messages not in the list will be disabled.
+names with optional minus prefix.
+A message name without prefix (e.g., \f[B]TIM\-TP\f[R]) enables that
+message.
+A message name with a minus prefix (e.g., \f[B]\-NAV\-SOL\f[R]) disables
+that message.
+Only the explicitly listed messages are affected; other messages retain
+their current state.
 Message names are case\-insensitive.
-Use \f[B]none\f[R] to disable all CASIC binary messages.
 .TP
 \f[B]\-\-survey\f[R]
 Perform a survey to determine the position of the antenna, and then run
@@ -249,6 +253,12 @@ Enable TIM\-TP binary message output:
 .IP
 .EX
 casictool \-d /dev/ttyUSB0 \-s 38400 \-\-casic\-out TIM\-TP
+.EE
+.PP
+Enable TIM\-TP and disable NAV\-SOL binary messages:
+.IP
+.EX
+casictool \-d /dev/ttyUSB0 \-s 38400 \-\-casic\-out TIM\-TP,\-NAV\-SOL
 .EE
 .PP
 Capture packets for 10 seconds to verify configuration:

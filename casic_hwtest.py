@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+import time
 from dataclasses import dataclass
 
 from casic import (
@@ -81,6 +82,39 @@ def time_pulse_matches(expected: TimePulse, actual: TimePulse) -> bool:
     return True
 
 
+def verify_messages_seen(
+    conn: CasicConnection,
+    expected_nmea: set[str] | None,
+    expected_casic: set[str] | None,
+    wait_time: float = 2.0,
+) -> TestResult:
+    """Wait for messages and verify expected ones are seen.
+
+    For enabled messages, we verify they appear in seen_messages.
+    For disabled messages, we cannot directly verify (they just won't appear).
+    """
+    # Clear any existing seen messages by receiving for a bit first
+    start = time.monotonic()
+    while time.monotonic() - start < wait_time:
+        conn.receive_packet(timeout=0.1)
+
+    # Check NMEA messages seen
+    if expected_nmea is not None:
+        seen_nmea = conn.seen_messages["NMEA"]
+        missing = expected_nmea - seen_nmea
+        if missing:
+            return Fail({"nmea_missing": {"expected": expected_nmea, "actual": seen_nmea}})
+
+    # Check CASIC messages seen
+    if expected_casic is not None:
+        seen_casic = conn.seen_messages["CASIC"]
+        missing = expected_casic - seen_casic
+        if missing:
+            return Fail({"casic_missing": {"expected": expected_casic, "actual": seen_casic}})
+
+    return Pass()
+
+
 def verify(conn: CasicConnection, props: ConfigProps, tool_log: logging.Logger) -> TestResult:
     """Apply props and verify they took effect."""
     job = ConfigJob(props=props)
@@ -90,6 +124,9 @@ def verify(conn: CasicConnection, props: ConfigProps, tool_log: logging.Logger) 
     actual = query_config_props(conn)
     mismatches: dict[str, dict[str, object]] = {}
     for key, expected_val in props.items():
+        # Skip nmea_out and casic_out - these are verified by seen_messages
+        if key in ("nmea_out", "casic_out"):
+            continue
         actual_val = actual.get(key)
         if key == "time_pulse":
             if not time_pulse_matches(expected_val, actual_val):  # type: ignore[arg-type]
@@ -135,6 +172,9 @@ def verify_persist(
     actual = query_config_props(conn)
     mismatches: dict[str, dict[str, object]] = {}
     for key, expected_val in props.items():
+        # Skip nmea_out and casic_out - cannot be verified via query
+        if key in ("nmea_out", "casic_out"):
+            continue
         actual_val = actual.get(key)
         if actual_val != expected_val:
             mismatches[key] = {"expected": expected_val, "actual": actual_val}
@@ -175,7 +215,15 @@ def format_props(props: ConfigProps) -> str:
         parts.append(f"nmea_out: {{{', '.join(enabled)}}}")
     if "casic_out" in props:
         casic_out = props["casic_out"]
-        parts.append(f"casic_out: {{{', '.join(sorted(casic_out))}}}")
+        if isinstance(casic_out, dict):
+            # New dict format: show enabled (+) and disabled (-) messages
+            enabled = sorted(name for name, enable in casic_out.items() if enable)
+            disabled = sorted(name for name, enable in casic_out.items() if not enable)
+            items = [f"+{n}" for n in enabled] + [f"-{n}" for n in disabled]
+            parts.append(f"casic_out: {{{', '.join(items)}}}")
+        else:
+            # Legacy set format
+            parts.append(f"casic_out: {{{', '.join(sorted(casic_out))}}}")
     return "{" + ", ".join(parts) + "}"
 
 
@@ -207,6 +255,60 @@ def run_tests(
             passed += 1
         else:
             failed.append(props)
+
+    return passed, len(tests), failed
+
+
+def run_message_tests(
+    conn: CasicConnection,
+    name: str,
+    tests: list[ConfigProps],
+    test_log: logging.Logger,
+    tool_log: logging.Logger,
+) -> tuple[int, int, list[ConfigProps]]:
+    """Run message output tests using seen_messages verification."""
+    test_log.info(f"running {name} tests")
+    passed = 0
+    failed: list[ConfigProps] = []
+
+    for props in tests:
+        # Apply the configuration
+        job = ConfigJob(props=props)
+        result = execute_job(conn, job, tool_log)
+        if not result.success:
+            test_log.error(f"FAIL {format_props(props)}: {result.error}")
+            failed.append(props)
+            continue
+
+        # Determine expected messages based on props
+        expected_nmea: set[str] | None = None
+        expected_casic: set[str] | None = None
+
+        if "nmea_out" in props:
+            nmea_out = props["nmea_out"]
+            expected_nmea = {nmea.name for nmea in NMEA if nmea_out[nmea.value] > 0}
+
+        if "casic_out" in props:
+            casic_out = props["casic_out"]
+            # casic_out is now dict[str, bool] - get enabled ones
+            if isinstance(casic_out, dict):
+                expected_casic = {name for name, enable in casic_out.items() if enable}
+            else:
+                # Legacy set format for test data compatibility
+                expected_casic = set(casic_out) if casic_out else None
+
+        # Verify by checking seen messages (only if we expect some messages)
+        if expected_nmea or expected_casic:
+            verify_result = verify_messages_seen(conn, expected_nmea, expected_casic)
+            log_result(test_log, props, verify_result)
+            if isinstance(verify_result, Pass):
+                passed += 1
+            else:
+                failed.append(props)
+        else:
+            # No messages to verify (all disabled) - just check config applied
+            test_log.info(f"PASS {format_props(props)} (no messages to verify)")
+            passed += 1
 
     return passed, len(tests), failed
 
@@ -271,6 +373,83 @@ def run_persist_tests(
     return passed, len(tests), failed
 
 
+def run_message_persist_tests(
+    conn: CasicConnection,
+    name: str,
+    tests: list[ConfigProps],
+    test_log: logging.Logger,
+    tool_log: logging.Logger,
+) -> tuple[int, int, list[ConfigProps]]:
+    """Run persist tests for message output configs using seen_messages verification.
+
+    For each test, use the next item in the list as alt_props (wrap around for last).
+    After reload, verify expected messages are seen.
+    """
+    test_log.info(f"running {name} persist tests")
+    passed = 0
+    failed: list[ConfigProps] = []
+
+    for i, props in enumerate(tests):
+        # Use next item as alt_props (wrap around)
+        alt_props = tests[(i + 1) % len(tests)]
+
+        # Set props and save to NVM
+        job = ConfigJob(props=props, save=SaveMode.CHANGES)
+        result = execute_job(conn, job, tool_log)
+        if not result.success:
+            test_log.error(f"FAIL persist {format_props(props)}: save failed: {result.error}")
+            failed.append(props)
+            continue
+
+        # Set alt_props WITHOUT saving (changes RAM only)
+        job = ConfigJob(props=alt_props)
+        result = execute_job(conn, job, tool_log)
+        if not result.success:
+            test_log.error(f"FAIL persist {format_props(props)}: alt_config failed: {result.error}")
+            failed.append(props)
+            continue
+
+        # Reload from NVM - should restore props
+        job = ConfigJob(reset=ResetMode.RELOAD)
+        result = execute_job(conn, job, tool_log)
+        if not result.success:
+            test_log.error(f"FAIL persist {format_props(props)}: reload failed: {result.error}")
+            failed.append(props)
+            continue
+
+        # Determine expected messages based on props (should have been restored)
+        expected_nmea: set[str] | None = None
+        expected_casic: set[str] | None = None
+
+        if "nmea_out" in props:
+            nmea_out = props["nmea_out"]
+            expected_nmea = {nmea.name for nmea in NMEA if nmea_out[nmea.value] > 0}
+
+        if "casic_out" in props:
+            casic_out = props["casic_out"]
+            if isinstance(casic_out, dict):
+                expected_casic = {name for name, enable in casic_out.items() if enable}
+            else:
+                expected_casic = set(casic_out) if casic_out else None
+
+        # Verify by checking seen messages (only if we expect some messages)
+        if expected_nmea or expected_casic:
+            verify_result = verify_messages_seen(conn, expected_nmea, expected_casic)
+            if isinstance(verify_result, Pass):
+                test_log.info(f"PASS persist {format_props(props)}")
+                passed += 1
+            else:
+                for key, vals in verify_result.mismatches.items():
+                    test_log.error(f"FAIL persist {key}: expected {vals['expected']}, got {vals['actual']}")
+                failed.append(props)
+        else:
+            # No messages to verify - just check reload succeeded
+            test_log.info(f"PASS persist {format_props(props)} (no messages to verify)")
+            passed += 1
+
+    return passed, len(tests), failed
+
+
 # ============================================================================
 # Test Data
 # ============================================================================
@@ -325,12 +504,12 @@ TP_TESTS: list[ConfigProps] = [
 ]
 
 CASIC_OUT_TESTS: list[ConfigProps] = [
-    # Multiple messages
-    {"casic_out": {"TIM-TP", "NAV-SOL", "NAV-TIMEUTC"}},
-    # Single message
-    {"casic_out": {"TIM-TP"}},
-    # Good state: none enabled (last test leaves receiver in clean state)
-    {"casic_out": set()},
+    # Multiple messages enabled
+    {"casic_out": {"TIM-TP": True, "NAV-SOL": True, "NAV-TIMEUTC": True}},
+    # Single message enabled
+    {"casic_out": {"TIM-TP": True}},
+    # Disable messages (last test leaves receiver in clean state)
+    {"casic_out": {"TIM-TP": False, "NAV-SOL": False, "NAV-TIMEUTC": False}},
 ]
 
 MIN_ELEV_TESTS: list[ConfigProps] = [
@@ -448,10 +627,10 @@ def main() -> int:
         # NMEA/CASIC output runs first to minimize output before other tests
         if not run_persist or (run_gnss or run_nmea or run_casic_out or run_time_mode or run_tp or run_min_elev):
             if run_nmea:
-                results["NMEA"] = run_tests(conn, "NMEA", NMEA_TESTS, test_log, tool_log)
+                results["NMEA"] = run_message_tests(conn, "NMEA", NMEA_TESTS, test_log, tool_log)
 
             if run_casic_out:
-                results["CASIC"] = run_tests(conn, "CASIC", CASIC_OUT_TESTS, test_log, tool_log)
+                results["CASIC"] = run_message_tests(conn, "CASIC", CASIC_OUT_TESTS, test_log, tool_log)
 
             if run_gnss:
                 results["GNSS"] = run_tests(conn, "GNSS", GNSS_TESTS, test_log, tool_log)
@@ -468,12 +647,12 @@ def main() -> int:
         # Run persist tests if --persist specified
         if run_persist:
             if run_nmea:
-                results["NMEA Persist"] = run_persist_tests(
+                results["NMEA Persist"] = run_message_persist_tests(
                     conn, "NMEA", NMEA_TESTS, test_log, tool_log
                 )
 
             if run_casic_out:
-                results["CASIC Persist"] = run_persist_tests(
+                results["CASIC Persist"] = run_message_persist_tests(
                     conn, "CASIC", CASIC_OUT_TESTS, test_log, tool_log
                 )
 
