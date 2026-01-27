@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import struct
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -14,6 +15,7 @@ import serial
 from casic import (
     ACK_ACK,
     ACK_NAK,
+    CFG_MSG,
     CasicPacket,
     CasicStreamParser,
     MsgID,
@@ -272,7 +274,7 @@ class CasicConnection:
 
         return False
 
-    def poll(self, cls: int, id: int, payload: bytes = b"", timeout: float = INITIAL_TIMEOUT) -> PollResult:
+    def cfg_poll(self, cls: int, id: int, payload: bytes = b"", timeout: float = INITIAL_TIMEOUT) -> PollResult:
         """Send query and wait for response.
 
         Returns PollResult with:
@@ -296,6 +298,39 @@ class CasicConnection:
                     return PollResult(None, nak=True)
 
             # Check for the actual response
+            if msg_id.cls == cls and msg_id.id == id:
+                return PollResult(payload)
+
+        return PollResult(None)
+
+    def msg_poll(self, cls: int, id: int, timeout: float = INITIAL_TIMEOUT) -> PollResult:
+        """Poll a non-CFG message by sending CFG-MSG with rate=0xFFFF.
+
+        Use this for NAV, TIM, MON, etc. messages. For CFG messages, use cfg_poll()
+        instead since they support the empty-payload query pattern.
+        """
+        # Build CFG-MSG payload: clsID (U1), msgID (U1), rate (U2 little-endian)
+        cfg_msg_payload = struct.pack("<BBH", cls, id, 0xFFFF)
+
+        # Send CFG-MSG to request one-time output
+        self.send(CFG_MSG.cls, CFG_MSG.id, cfg_msg_payload)
+
+        start_time = time.monotonic()
+
+        while time.monotonic() - start_time < timeout:
+            remaining = timeout - (time.monotonic() - start_time)
+            result = self.receive(timeout=remaining)
+            if result is None:
+                continue
+
+            msg_id, payload = result
+
+            # Check for NAK to our CFG-MSG
+            if msg_id == ACK_NAK and len(payload) >= 2:
+                if payload[0] == CFG_MSG.cls and payload[1] == CFG_MSG.id:
+                    return PollResult(None, nak=True)
+
+            # Check for the target message response
             if msg_id.cls == cls and msg_id.id == id:
                 return PollResult(payload)
 

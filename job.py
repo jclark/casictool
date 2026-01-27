@@ -245,7 +245,7 @@ def probe_receiver(
     # Retry MON-VER query up to 5 times
     for attempt in range(5):
         log.debug(f"sending MON-VER query (attempt {attempt + 1}/5)")
-        result = conn.poll(MON_VER.cls, MON_VER.id, timeout=2.0)
+        result = conn.msg_poll(MON_VER.cls, MON_VER.id, timeout=2.0)
         if result.success:
             log.info("CASIC receiver detected")
             return True, parse_mon_ver(result.payload)  # type: ignore[arg-type]
@@ -362,7 +362,7 @@ def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> Re
     # Single-response queries first (use INITIAL_TIMEOUT via poll default)
 
     # Query CFG-RATE
-    result = conn.poll(CFG_RATE.cls, CFG_RATE.id)
+    result = conn.cfg_poll(CFG_RATE.cls, CFG_RATE.id)
     if result.success:
         config.rate = parse_cfg_rate(result.payload)  # type: ignore[arg-type]
         if log:
@@ -371,7 +371,7 @@ def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> Re
         _log_failure("navigation solution rate configuration", "CFG-RATE", result.nak)
 
     # Query CFG-TP
-    result = conn.poll(CFG_TP.cls, CFG_TP.id)
+    result = conn.cfg_poll(CFG_TP.cls, CFG_TP.id)
     if result.success:
         config.time_pulse = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
         if log:
@@ -380,7 +380,7 @@ def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> Re
         _log_failure("time pulse configuration", "CFG-TP", result.nak)
 
     # Query CFG-TMODE
-    result = conn.poll(CFG_TMODE.cls, CFG_TMODE.id)
+    result = conn.cfg_poll(CFG_TMODE.cls, CFG_TMODE.id)
     if result.success:
         config.time_mode = parse_cfg_tmode(result.payload)  # type: ignore[arg-type]
         if log:
@@ -389,7 +389,7 @@ def query_config(conn: CasicConnection, log: logging.Logger | None = None) -> Re
         _log_failure("time mode configuration", "CFG-TMODE", result.nak)
 
     # Query CFG-NAVX
-    result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
+    result = conn.cfg_poll(CFG_NAVX.cls, CFG_NAVX.id)
     if result.success:
         config.nav_engine = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
         if log:
@@ -720,7 +720,7 @@ def set_time_pulse(
         True if ACK received, False on NAK or timeout
     """
     # Query current config
-    result = conn.poll(CFG_TP.cls, CFG_TP.id)
+    result = conn.cfg_poll(CFG_TP.cls, CFG_TP.id)
     if not result.success:
         return False
 
@@ -803,7 +803,7 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
     props: ConfigProps = {}
 
     # Query GNSS constellations, min elevation, and dyn_model (CFG-NAVX)
-    result = conn.poll(CFG_NAVX.cls, CFG_NAVX.id)
+    result = conn.cfg_poll(CFG_NAVX.cls, CFG_NAVX.id)
     if result.success:
         navx = parse_cfg_navx(result.payload)  # type: ignore[arg-type]
         props["gnss"] = gnss_mask_to_set(navx.nav_system)
@@ -811,7 +811,7 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
         props["dyn_model"] = navx.dyn_model
 
     # Query time mode (CFG-TMODE)
-    result = conn.poll(CFG_TMODE.cls, CFG_TMODE.id)
+    result = conn.cfg_poll(CFG_TMODE.cls, CFG_TMODE.id)
     if result.success:
         tmode = parse_cfg_tmode(result.payload)  # type: ignore[arg-type]
         if tmode.mode == 0:
@@ -831,7 +831,7 @@ def query_config_props(conn: CasicConnection) -> ConfigProps:
             )
 
     # Query time pulse (CFG-TP)
-    result = conn.poll(CFG_TP.cls, CFG_TP.id)
+    result = conn.cfg_poll(CFG_TP.cls, CFG_TP.id)
     if result.success:
         tp = parse_cfg_tp(result.payload)  # type: ignore[arg-type]
         props["time_pulse"] = TimePulse(
